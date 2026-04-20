@@ -99,7 +99,7 @@ class Atmosphere(Model):
             return
         self._telescope.pwv.sample(nsamples)
         self._telescope.elevation.sample(nsamples)
-        self._sampled_keys = model.get_keys(1e-6*np.atleast_1d(self._telescope.pwv()), np.atleast_1d(self._telescope.elevation())) #pylint: disable=no-member
+        self._sampled_keys = model.get_keys(1e-3*np.atleast_1d(self._telescope.pwv()), np.atleast_1d(self._telescope.elevation())) #pylint: disable=no-member  # 1e-3: PWV in mm -> meters for get_keys
         self._nsamples = max(nsamples, 1)
 
     def temp(self, freqs):

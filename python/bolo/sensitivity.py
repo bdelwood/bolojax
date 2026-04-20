@@ -170,10 +170,11 @@ class Sensitivity(Model): #pylint: disable=too-many-instance-attributes
 
         self.NEP_ph_corr.set_from_SI(nep_ph_corr)
 
-        if self.NEP_read is None or not np.isfinite(self.NEP_read.SI).all():
-            self.NEP_read.set_from_SI(np.sqrt((1 + self._channel.read_frac())**2 - 1.)*np.sqrt(self.NEP_bolo.SI**2 + self.NEP_ph.SI**2))
+        _read_nep = self._channel.read_NEP(self.opt_power.SI)
+        if _read_nep is not None and np.isfinite(_read_nep).all():
+            self.NEP_read.set_from_SI(_read_nep)
         else:
-            self.NEP_read.set_from_SI(self._channel.read_NEP(self.opt_power.SI))
+            self.NEP_read.set_from_SI(np.sqrt((1 + self._channel.read_frac())**2 - 1.)*np.sqrt(self.NEP_bolo.SI**2 + self.NEP_ph.SI**2))
 
         self.NEP.set_from_SI(np.sqrt(self.NEP_bolo.SI**2 + self.NEP_ph.SI**2 + self.NEP_read.SI**2))
         self.NEP_corr.set_from_SI(np.sqrt(self.NEP_bolo.SI**2 + self.NEP_ph_corr.SI**2 + self.NEP_read.SI**2))

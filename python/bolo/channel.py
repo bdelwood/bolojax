@@ -113,13 +113,21 @@ class Channel(Model):  #pylint: disable=too-many-instance-attributes
         det_pitch = self.pixel_size.SI / (self.camera.f_number.SI * physics.lamb(self.band_center.SI))
         return self.noise_calc.photon_NEP(elem_power, self._freqs, elems=elems, det_pitch=det_pitch, ap_names=ap_names)
 
-    def bolo_Psat(self, opt_pow):
-        """ Return the PSAT used the the computation """
+    def _resolve_psat(self, opt_pow):
+        """Resolve Psat from explicit value or psat_factor.
+
+        Explicit psat takes priority over psat_factor (matching BoloCalc's
+        convention). Result is broadcast to match opt_pow shape.
+        """
+        if is_not_none(self.psat) and np.isfinite(self.psat.SI).all():
+            return np.broadcast_to(self.psat.SI, np.shape(opt_pow))
         if is_not_none(self.psat_factor) and np.isfinite(self.psat_factor.SI):
-            p_sat = opt_pow * self.psat_factor.SI
-        else:
-            p_sat = self.psat.SI
-        return p_sat
+            return opt_pow * self.psat_factor.SI
+        return opt_pow * 3.0  # fallback default
+
+    def bolo_Psat(self, opt_pow):
+        """ Return the PSAT used in the computation """
+        return self._resolve_psat(opt_pow)
 
     def bolo_G(self, opt_pow):
         """ Return the Bolometeric G factor used in the computation """
@@ -129,11 +137,7 @@ class Channel(Model):  #pylint: disable=too-many-instance-attributes
         if is_not_none(self.G) and np.isfinite(self.G.SI).all():
             g = self.G.SI
         else:
-            if is_not_none(self.psat_factor) and np.isfinite(self.psat_factor.SI):
-                p_sat = opt_pow * self.psat_factor.SI
-            else:
-                p_sat = self.psat.SI
-            g = noise.G(p_sat, n, tb, tc)
+            g = noise.G(self._resolve_psat(opt_pow), n, tb, tc)
         return g
 
     def bolo_Flink(self):
@@ -151,15 +155,11 @@ class Channel(Model):  #pylint: disable=too-many-instance-attributes
         """ Return the bolometric NEP given the detector details """
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
-        n = self.carrier_index.SI  #1. #self.n
+        n = self.carrier_index.SI
         if is_not_none(self.G) and np.isfinite(self.G.SI).all():
             g = self.G.SI
         else:
-            if is_not_none(self.psat_factor) and np.isfinite(self.psat_factor.SI):
-                p_sat = opt_pow * self.psat_factor.SI
-            else:
-                p_sat = self.psat.SI
-            g = noise.G(p_sat, n, tb, tc)
+            g = noise.G(self._resolve_psat(opt_pow), n, tb, tc)
         if is_not_none(self.Flink) and np.isfinite(self.Flink.SI):
             flink = self.Flink.SI
         else:
@@ -172,11 +172,8 @@ class Channel(Model):  #pylint: disable=too-many-instance-attributes
             return None
         if np.isnan(self.bolo_resistance.SI).any():
             return None
-        if is_not_none(self.psat) and np.isfinite(self.psat.SI).all():
-            p_stat = self.psat.SI
-        else:
-            p_stat = self.psat_factor.SI * opt_pow
-        p_bias = (p_stat - opt_pow).clip(0, np.inf)
+        p_sat = self._resolve_psat(opt_pow)
+        p_bias = (p_sat - opt_pow).clip(0, np.inf)
         if is_not_none(self.response_factor) and np.isfinite(self.response_factor.SI).all():
             s_fact = self.response_factor.SI
         else:
