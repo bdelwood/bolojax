@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections import OrderedDict as odict
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr, create_model
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from .cfg import Var, expand_dict
 from .channel import Channel
 
 
-class Camera_Base(BaseModel):
+class Camera(BaseModel):
     """Camera model."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
@@ -20,27 +20,24 @@ class Camera_Base(BaseModel):
     optical_coupling: Var() = 1.0
     f_number: Var() = 2.5
     bath_temperature: Var() = 0.1
-    skip_optical_elements: list = []
+    skip_optical_elements: list = Field(default_factory=list)
     chan_config: dict | None = None
 
-    _channels: Any = PrivateAttr(default=None)
+    # Channels built from chan_config during construction
+    channels: dict[str, Channel] = Field(default_factory=dict)
+
     _optics: Any = PrivateAttr(default=None)
     _instrument: Any = PrivateAttr(default=None)
     _name: str | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context):
-        channels = odict()
-        for key, val in self.__dict__.items():
-            if isinstance(val, Channel):
-                channels[key] = val
-        object.__setattr__(self, "_channels", channels)
-        # Ensure skip_optical_elements is a fresh list
-        if self.skip_optical_elements is None:
-            object.__setattr__(self, "skip_optical_elements", [])
-
-    @property
-    def channels(self):
-        return self._channels
+        # Build channels from chan_config if channels weren't provided directly
+        if not self.channels and self.chan_config:
+            expanded = expand_dict(self.chan_config)
+            channels = odict()
+            for name, cfg in expanded.items():
+                channels[name] = Channel(**cfg)
+            self.channels = channels
 
     @property
     def optics(self):
@@ -89,38 +86,17 @@ class Camera_Base(BaseModel):
 
     @property
     def instrument(self):
+        """Return the parent instrument."""
         return self._instrument
 
 
-def build_camera_class(name="Camera", **kwargs):
-    """Build a camera from a configuration dictionary."""
-    kwcopy = kwargs.copy()
-    type_dicts = [{None: Channel}]
-    config_dicts = [kwcopy.pop("chan_config")]
-    return _build_camera_model(name, Camera_Base, config_dicts, type_dicts, **kwcopy)
-
-
-def _build_camera_model(name, base_class, config_dicts, type_dicts, **kwargs):
-    """Build a pydantic model class dynamically and return an instance."""
-    kwcopy = kwargs.copy()
-    field_definitions = {}
-    for config_dict, type_dict in zip(config_dicts, type_dicts):
-        expanded = expand_dict(config_dict)
-        kwcopy.update(expanded)
-        for field_name, field_config in expanded.items():
-            cls = type_dict[field_config.pop("obj_type", None)]
-            field_definitions[field_name] = (cls | None, None)
-    new_class = create_model(name, __base__=base_class, **field_definitions)
-    return new_class(**kwcopy)
-
-
-def build_cameras(def_channel_config, camera_config):
+def build_cameras(def_channel_config: dict, camera_config: dict) -> odict:
     """Build a set of cameras from a configuration dictionary."""
     cam_full = expand_dict(camera_config)
 
     ret = odict()
     for key, val in cam_full.items():
-        cam_config = val.copy()
-        cam_config["chan_config"]["default"] = def_channel_config.copy()
-        ret[key] = build_camera_class(key, **cam_config)
+        cam_cfg = val.copy()
+        cam_cfg["chan_config"]["default"] = def_channel_config.copy()
+        ret[key] = Camera(**cam_cfg)
     return ret

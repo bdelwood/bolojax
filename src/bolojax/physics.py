@@ -131,8 +131,8 @@ def apert_illum(freq, pixd, fnum, wf=3.0):
     theta_stop = lamb_val / (np.pi * w0)
     theta_apert = jnp.arange(0.0, jnp.arctan(1.0 / (2.0 * fnum)), 0.01)
     V = jnp.exp(-jnp.power(theta_apert, 2.0) / jnp.power(theta_stop, 2.0))
-    eff_num = jnp.power(jnp.trapz(V * jnp.tan(theta_apert / 2.0), theta_apert), 2.0)
-    eff_denom = jnp.trapz(jnp.power(V, 2.0) * jnp.sin(theta_apert), theta_apert)
+    eff_num = jnp.power(jnp.trapezoid(V * jnp.tan(theta_apert / 2.0), theta_apert), 2.0)
+    eff_denom = jnp.trapezoid(jnp.power(V, 2.0) * jnp.sin(theta_apert), theta_apert)
     eff_fact = 2.0 * jnp.power(jnp.tan(theta_apert / 2.0), -2.0)
     return (eff_num / eff_denom) * eff_fact
 

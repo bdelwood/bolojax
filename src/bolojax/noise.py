@@ -50,7 +50,7 @@ def calc_photon_NEP(popts, freqs, factors=None):
     # Don't consider correlations
     if factors is None:
         popt2 = popt * popt
-        nep = np.sqrt(np.trapz((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
+        nep = np.sqrt(np.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
         neparr = nep
         return nep, neparr
 
@@ -64,8 +64,8 @@ def calc_photon_NEP(popts, freqs, factors=None):
             for j in range(len(popts))
         ]
     )
-    nep = np.sqrt(np.trapz((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
-    neparr = np.sqrt(np.trapz((2.0 * physics.h * freqs * popt + 2.0 * popt2arr), freqs))
+    nep = np.sqrt(np.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
+    neparr = np.sqrt(np.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2arr), freqs))
 
     return nep, neparr
 
@@ -104,7 +104,7 @@ def dPdT(eff, freqs):
     freqs (float): observation frequencies [Hz]
     """
     temp = np.array([physics.Tcmb for f in freqs])
-    return np.trapz(physics.ani_pow_spec(np.array(freqs), temp, np.array(eff)), freqs)
+    return np.trapezoid(physics.ani_pow_spec(np.array(freqs), temp, np.array(eff)), freqs)
 
 
 def NET_from_NEP(nep, freqs, sky_eff, opt_coup=1.0):

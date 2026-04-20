@@ -16,7 +16,7 @@ def _Trj_over_Tcmb(freqs):
     """Convert to RJ temperature from CMB temperature."""
     factor_spec = physics.Trj_over_Tb(freqs, physics.Tcmb)
     bw = freqs[-1] - freqs[0]
-    return np.trapz(factor_spec, freqs) / bw
+    return np.trapezoid(factor_spec, freqs) / bw
 
 
 def bcast_list(array_list):
@@ -181,31 +181,31 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
             cumul_list_down.append(cumul_power_down)
         self._elem_sky_power_by_freq = np.array(cumul_list_down)
 
-        # These are integrated across the bands (using np.trapz to do trapezoid rule integration)
+        # These are integrated across the bands (using np.trapezoid to do trapezoid rule integration)
         # Optical power from each element
         self.elem_power_to_det.set_from_SI(
-            np.trapz(self._elem_power_to_det_by_freq, self._freqs)
+            np.trapezoid(self._elem_power_to_det_by_freq, self._freqs)
         )
         self.elem_power_from_sky.set_from_SI(
-            np.trapz(self._elem_sky_power_by_freq, self._freqs)
+            np.trapezoid(self._elem_sky_power_by_freq, self._freqs)
         )
 
         # Optical efficiency from each element
         self.elem_effic.set_from_SI(
-            np.trapz(self._trans[1:-1], self._freqs) / self._bandwidth
+            np.trapezoid(self._trans[1:-1], self._freqs) / self._bandwidth
         )
         # Cumulative efficiency for the rest of the optical chain, by element
         self.elem_cumul_effic.set_from_SI(
-            np.trapz(self._elem_cumul_effic_by_freq, self._freqs) / self._bandwidth
+            np.trapezoid(self._elem_cumul_effic_by_freq, self._freqs) / self._bandwidth
         )
         # Total channel efficiency
         self.effic.set_from_SI(
-            np.trapz(self._chan_effic, self._freqs) / self._bandwidth
+            np.trapezoid(self._chan_effic, self._freqs) / self._bandwidth
         )
 
         # This is the efficiency of all the telescope elements
         self._tel_effic = (
-            np.trapz(self._elem_cumul_effic_by_freq[NSKY_SRC], self._freqs)
+            np.trapezoid(self._elem_cumul_effic_by_freq[NSKY_SRC], self._freqs)
             / self._bandwidth
         )
 

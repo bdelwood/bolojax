@@ -3,7 +3,7 @@
 from bolojax._version import __version__
 
 from . import noise, physics, unit, utils
-from .camera import build_cameras
+from .camera import Camera, build_cameras
 from .cfg import (
     OutputField,
     OutputHolder,

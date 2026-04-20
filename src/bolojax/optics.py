@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections import OrderedDict as odict
+from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import physics
 from .cfg import Var, expand_dict
@@ -86,11 +87,7 @@ class OpticalElement(BaseModel):
     scatter_frac: Var() = None
 
     elem_name: str | None = None
-    results: dict = {}
-
-    def model_post_init(self, __context):
-        # Ensure each instance gets its own results dict
-        object.__setattr__(self, "results", {})
+    results: dict = Field(default_factory=dict)
 
     def unsample(self):
         """Clear out the sampled parameters."""
@@ -186,65 +183,63 @@ class ApertureStop(OpticalElement):
         return super().calc_abso(channel, freqs, nsample)
 
 
-class Optics_Base(BaseModel):
-    """Base class for optical chains."""
+_ELEMENT_TYPES: dict[str | None, type[OpticalElement]] = {
+    None: OpticalElement,
+    "Mirror": Mirror,
+    "Dielectric": Dielectric,
+    "ApertureStop": ApertureStop,
+}
+
+
+class Optics(BaseModel):
+    """A collection of optical elements built from a config dict."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-    def model_post_init(self, __context):
-        elements = odict()
-        mirrors = odict()
-        dielectics = odict()
-        apertureStops = odict()
-        for key, val in self.__dict__.items():
-            if isinstance(val, OpticalElement):
-                val.elem_name = key
-                elements[key] = val
-            if isinstance(val, Mirror):
-                mirrors[key] = val
-            if isinstance(val, Dielectric):
-                dielectics[key] = val
-            if isinstance(val, ApertureStop):
-                apertureStops[key] = val
-        object.__setattr__(self, "elements", elements)
-        object.__setattr__(self, "mirrors", mirrors)
-        object.__setattr__(self, "dielectics", dielectics)
-        object.__setattr__(self, "apertureStops", apertureStops)
+    elements: dict[str, OpticalElement] = Field(default_factory=dict)
+    mirrors: dict[str, Mirror] = Field(default_factory=dict)
+    dielectics: dict[str, Dielectric] = Field(default_factory=dict)
+    apertureStops: dict[str, ApertureStop] = Field(default_factory=dict)
 
 
-def build_optics_class(name="Optics", **kwargs):
-    """Build a class that consists of a set of OpticalElements.
+def build_optics(config: dict[str, Any]) -> Optics:
+    """Build an Optics instance from a config dict.
 
     Parameters
     ----------
-    name : str
-        The name of the new class
-    kwargs : dict
-        Hierarchical dictionary used to build elements
+    config : dict
+        Hierarchical dictionary with 'default'/'elements' structure.
+        Each element may have an ``obj_type`` key (Mirror, Dielectric,
+        ApertureStop) or default to OpticalElement.
 
     Returns
     -------
-    object
-        Instance of the new class with all requested optical elements
+    Optics
+        Instance with all requested optical elements categorised.
     """
-    type_dict = {
-        None: OpticalElement,
-        "Mirror": Mirror,
-        "Dielectric": Dielectric,
-        "ApertureStop": ApertureStop,
-    }
-    return _build_model(name, Optics_Base, [kwargs], [type_dict])
+    expanded = expand_dict(config)
+    elements = odict()
+    mirrors = odict()
+    dielectics = odict()
+    apertureStops = odict()
 
+    for name, elem_cfg in expanded.items():
+        cfg = elem_cfg.copy()
+        obj_type = cfg.pop("obj_type", None)
+        cls = _ELEMENT_TYPES[obj_type]
+        elem = cls(**cfg)
+        elem.elem_name = name
+        elements[name] = elem
+        if isinstance(elem, Mirror):
+            mirrors[name] = elem
+        if isinstance(elem, Dielectric):
+            dielectics[name] = elem
+        if isinstance(elem, ApertureStop):
+            apertureStops[name] = elem
 
-def _build_model(name, base_class, config_dicts, type_dicts, **kwargs):
-    """Build a pydantic model class dynamically and return an instance."""
-    kwcopy = kwargs.copy()
-    field_definitions = {}
-    for config_dict, type_dict in zip(config_dicts, type_dicts):
-        expanded = expand_dict(config_dict)
-        kwcopy.update(expanded)
-        for field_name, field_config in expanded.items():
-            cls = type_dict[field_config.pop("obj_type", None)]
-            field_definitions[field_name] = (cls | None, None)
-    new_class = create_model(name, __base__=base_class, **field_definitions)
-    return new_class(**kwcopy)
+    return Optics(
+        elements=elements,
+        mirrors=mirrors,
+        dielectics=dielectics,
+        apertureStops=apertureStops,
+    )

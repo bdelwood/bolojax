@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from .camera import build_cameras
 from .cfg import Var
 from .data_utils import TableDict
-from .optics import build_optics_class
+from .optics import build_optics
 from .readout import Readout
 from .sensitivity import Sensitivity
 
@@ -57,10 +57,9 @@ class Instrument(BaseModel):
         return self._tables
 
     def model_post_init(self, __context):
-        self._optics = build_optics_class(**self.optics_config)
+        self._optics = build_optics(self.optics_config)
         self._cameras = build_cameras(self.channel_default, self.camera_config)
         for key, val in self._cameras.items():
-            object.__setattr__(self, key, val)
             val.set_parent(self, key)
 
     def eval_sky(self, universe, nsamples=0, freq_resol=None):
