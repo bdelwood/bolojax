@@ -1,7 +1,7 @@
 """Computations for noise estimation."""
 
-import os
 import pickle as pk
+from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
@@ -164,6 +164,25 @@ class Noise:  # pylint: disable=too-many-instance-attributes
     Args:
     phys (src.Physics): parent Physics object
 
+    Attributes set dynamically from pkl files:
+    _p_c_apert, _c_apert, _p_c_stop, _c_stop,
+    _p_i_apert, _i_apert, _p_i_stop, _i_stop
+    """
+
+    _p_c_apert: np.ndarray
+    _c_apert: np.ndarray
+    _p_c_stop: np.ndarray
+    _c_stop: np.ndarray
+    _p_i_apert: np.ndarray
+    _i_apert: np.ndarray
+    _p_i_stop: np.ndarray
+    _i_stop: np.ndarray
+    _det_p: np.ndarray
+
+    """
+    Args:
+    phys (src.Physics): parent Physics object
+
     Parents:
     phys (src.Physics): Physics object
     """
@@ -172,16 +191,16 @@ class Noise:  # pylint: disable=too-many-instance-attributes
         # Aperture stop names
         self._ap_names = ["APERT", "STOP", "LYOT"]
 
-        # Correlation files
-        corr_dir = os.path.join(os.path.split(__file__)[0], "PKL")
+        # Correlation files (pre-computed Bose white-noise factors, arXiv:1806.04316)
+        corr_dir = Path(__file__).parent / "PKL"
         for name, attrs in [
             ("coherentApertCorr.pkl", ("_p_c_apert", "_c_apert")),
             ("coherentStopCorr.pkl", ("_p_c_stop", "_c_stop")),
             ("incoherentApertCorr.pkl", ("_p_i_apert", "_i_apert")),
             ("incoherentStopCorr.pkl", ("_p_i_stop", "_i_stop")),
         ]:
-            path = os.path.normpath(os.path.join(corr_dir, name))
-            with open(path, "rb") as f:
+            path = corr_dir / name
+            with path.open("rb") as f:
                 p, c = pk.load(f, encoding="latin1")
             setattr(self, attrs[0], p)
             setattr(self, attrs[1], c)

@@ -1,6 +1,6 @@
 """Functions to store analysis results as astropy data tables"""
 
-import os
+from pathlib import Path
 
 import h5py
 from astropy.io import fits
@@ -25,7 +25,7 @@ def create_dict_from_guard_rows(col_dict):
         The dictionary we created
     """
     ret_dict = {}
-    for key in col_dict.keys():
+    for key in col_dict:
         ret_dict[key] = []
     return ret_dict
 
@@ -149,8 +149,7 @@ class TableDict:
         o_dict : `dict`
             Dictionary of `Table` objects
         """
-        o_dict = {self.make_datatable(key, val) for key, val in data.items()}
-        return o_dict
+        return {self.make_datatable(key, val) for key, val in data.items()}
 
     def save_datatables(self, filepath, **kwargs):
         """Save all of the `Table` objects in this object to a file
@@ -166,15 +165,12 @@ class TableDict:
         ------
         ValueError : If the output file type is not known.
         """
-        extype = os.path.splitext(filepath)[1]
+        extype = Path(filepath).suffix
         if extype in HDF5_SUFFIXS:
             for key, val in self._table_dict.items():
                 val.write(filepath, path=key, overwrite=True, **kwargs)
         elif extype in FITS_SUFFIXS:
-            if self._primary is None:
-                hlist = [fits.PrimaryHDU()]
-            else:
-                hlist = [self._primary]
+            hlist = [fits.PrimaryHDU()] if self._primary is None else [self._primary]
             for key, val in self._table_dict.items():
                 hdu = fits.table_to_hdu(val)
                 hdu.name = key
@@ -182,9 +178,8 @@ class TableDict:
             hdulist = fits.HDUList(hlist)
             hdulist.writeto(filepath, overwrite=True, **kwargs)
         else:
-            raise ValueError(
-                "Can only write pickle and hdf5 files for now, not %s" % extype
-            )
+            msg = f"Can only write pickle and hdf5 files for now, not {extype}"
+            raise ValueError(msg)
 
     def load_datatables(self, filepath, **kwargs):
         """Read a set of `Table` objects from a file into this object
@@ -200,7 +195,7 @@ class TableDict:
         ------
         ValueError : If the input file type is not known.
         """
-        extype = os.path.splitext(filepath)[1]
+        extype = Path(filepath).suffix
         tablelist = kwargs.get("tablelist")
         if extype in HDF5_SUFFIXS:
             hdffile = h5py.File(filepath)
@@ -216,6 +211,5 @@ class TableDict:
                         filepath, hdu=hdu.name
                     )
         else:
-            raise ValueError(
-                "Can only read pickle and hdf5 files for now, not %s" % extype
-            )
+            msg = f"Can only read pickle and hdf5 files for now, not {extype}"
+            raise ValueError(msg)

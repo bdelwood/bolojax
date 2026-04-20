@@ -23,7 +23,7 @@ def bcast_list(array_list):
     """Broadcast a list of arrays to a single shape."""
     bcast = np.broadcast(*array_list)
     return np.array([np.array(v) for v in bcast]).T.reshape(
-        [bcast.numiter] + list(bcast.shape)
+        [bcast.numiter, *list(bcast.shape)]
     )
 
 
@@ -73,7 +73,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
     map_depth = OutputField(unit="uK-amin")
     map_depth_RJ = OutputField(unit="uK-amin")
 
-    summary_fields = [
+    summary_fields: ClassVar[list[str]] = [
         "effic",
         "opt_power",
         "P_sat",
@@ -91,7 +91,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         "NET_arr",
     ]
 
-    optical_output_fields = [
+    optical_output_fields: ClassVar[list[str]] = [
         "elem_effic",
         "elem_cumul_effic",
         "elem_power_from_sky",
@@ -102,7 +102,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         """Constructor."""
 
         # Initialize all output holders
-        for name, field in type(self)._output_fields.items():
+        for field in type(self)._output_fields.values():
             setattr(self, field.private_name, field.make_holder())
 
         self._channel = channel
@@ -125,17 +125,15 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
 
         # Buffer both sides of the transmission array, because we will be taking cumulative products that are offset by one
         # (i.e., we want the product of all the elements downstream of a particular element)
-        self.trans_list = (
-            [0.0]
-            + channel.sky_effic
-            + channel.optical_effic
-            + [channel._det_effic]
-            + [1.0]
-        )
+        self.trans_list = [
+            0.0,
+            *channel.sky_effic,
+            *channel.optical_effic,
+            channel._det_effic,
+            1.0,
+        ]
         self._trans = bcast_list(self.trans_list)
-        self.emiss_list = (
-            channel.sky_emiss + channel.optical_emiss + [channel._det_emiss]
-        )
+        self.emiss_list = [*channel.sky_emiss, *channel.optical_emiss, channel._det_emiss]
         self._emiss = bcast_list(self.emiss_list)
 
         self._elem_names = (
@@ -175,7 +173,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         # Note that we have to pull out the padding here
         cumul_power_down = 0.0
         cumul_list_down = []
-        for elem_power, elem_trans in zip(self._elem_power_by_freq, self._trans[:-2]):
+        for elem_power, elem_trans in zip(self._elem_power_by_freq, self._trans[:-2], strict=False):
             cumul_power_down = cumul_power_down + elem_power
             cumul_power_down = cumul_power_down * elem_trans
             cumul_list_down.append(cumul_power_down)

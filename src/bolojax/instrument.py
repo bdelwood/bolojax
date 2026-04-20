@@ -91,13 +91,13 @@ class Instrument(BaseModel):
             val.make_tables(f"{basename}{key}", self._tables, **kwargs)
 
         if kwargs.get("save_summary", True):
-            sum_keys = [key for key in self._tables.keys() if key.find("_summary") > 0]
+            sum_keys = [key for key in self._tables.keys() if key.find("_summary") > 0]  # noqa: SIM118
             sum_table = vstack(
                 [self._tables.pop_table(sum_key) for sum_key in sum_keys]
             )
             self._tables.add_datatable(f"{basename}summary", sum_table)
         if kwargs.get("save_optical", True):
-            opt_keys = [key for key in self._tables.keys() if key.find("_optical") > 0]
+            opt_keys = [key for key in self._tables.keys() if key.find("_optical") > 0]  # noqa: SIM118
             opt_table = vstack(
                 [self._tables.pop_table(opt_key) for opt_key in opt_keys]
             )

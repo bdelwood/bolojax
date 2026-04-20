@@ -4,6 +4,8 @@ import numpy as np
 
 from .utils import read_txt_to_np
 
+_rng = np.random.default_rng()
+
 
 class ChoiceDist:
     """
@@ -30,7 +32,8 @@ class ChoiceDist:
             self._inp = np.array(inp)
 
         if len(self._inp.shape) != 2:
-            raise ValueError("ChoiceDist requires 2 input arrays %s" % self._inp.shape)
+            msg = f"ChoiceDist requires 2 input arrays {self._inp.shape}"
+            raise ValueError(msg)
 
         self.val = self._inp[0]
         self.prob = self._inp[1]
@@ -46,8 +49,8 @@ class ChoiceDist:
         nsample (int): the number of times to sample the distribution
         """
         if nsample == 1:
-            return np.random.choice(self.val, size=nsample, p=self.prob)[0]
-        return np.random.choice(self.val, size=nsample, p=self.prob)
+            return _rng.choice(self.val, size=nsample, p=self.prob)[0]
+        return _rng.choice(self.val, size=nsample, p=self.prob)
 
     def change(self, new_avg):
         """Arithmetically shift the distribution to the new central value"""

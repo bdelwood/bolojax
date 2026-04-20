@@ -1,6 +1,7 @@
 """Command-line interface for bolojax."""
 
 import argparse
+from pathlib import Path
 
 import yaml
 
@@ -17,7 +18,7 @@ def main():
 
     args = parser.parse_args()
 
-    with open(args.input) as f:
+    with Path(args.input).open() as f:
         dd = yaml.safe_load(f)
 
     top = Top(**dd)

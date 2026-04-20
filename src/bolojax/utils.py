@@ -1,7 +1,7 @@
 """This module contains functions to help manage configuration for the
 offline analysis of LSST Electrical-Optical testing"""
 
-import os
+from pathlib import Path
 
 import numpy as np
 
@@ -39,7 +39,7 @@ class CfgDir:
 
     def cfg_path(self, val):
         """Build a path using the top-level configuration directory"""
-        return os.path.normpath(os.path.join(self.config_dir, val))
+        return str(Path(self.config_dir) / val)
 
 
 CFG_DIR = CfgDir()
@@ -64,8 +64,7 @@ def copy_dict(in_dict, def_dict):
     outdict : `dict`
         Dictionary with arguments selected from in_dict to overide def_dict
     """
-    outdict = {key: in_dict.get(key, val) for key, val in def_dict.items()}
-    return outdict
+    return {key: in_dict.get(key, val) for key, val in def_dict.items()}
 
 
 def pop_values(in_dict, keylist):
@@ -160,16 +159,17 @@ def expand_dict_from_defaults_and_elements(default_dict, elem_dict):
 
 
 def read_txt_to_np(fname):
-    """Read a txt file to a numpy array"""
-    ext = os.path.splitext(fname)[-1]
+    """Read a txt file to a numpy array."""
+    ext = Path(fname).suffix
     if ext.lower() == ".txt":
         delim = None
     elif ext.lower() == ".csv":
         delim = ","
     else:
-        raise ValueError("File %s is not csv or txt")
+        msg = f"File {fname} is not csv or txt"
+        raise ValueError(msg)
     return np.loadtxt(
-        os.path.normpath(fname), unpack=True, dtype=np.float64, delimiter=delim
+        str(Path(fname)), unpack=True, dtype=np.float64, delimiter=delim
     )
 
 

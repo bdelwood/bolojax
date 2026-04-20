@@ -6,6 +6,8 @@ import numpy as np
 
 from .utils import is_none, read_txt_to_np
 
+_rng = np.random.default_rng()
+
 
 class FreqInterp:
     """
@@ -61,6 +63,6 @@ class FreqInterp:
 
         if is_none(self.errs_interp):
             return (np.ones((nsample, 1)) * self.tran_interp).clip(0.0, 1.0)
-        return np.random.normal(
+        return _rng.normal(
             self.tran_interp, self.errs_interp, (nsample, len(self.tran_interp))
         ).clip(0.0, 1.0)

@@ -52,7 +52,7 @@ class ParamHolder:
         self.scale = np.asarray(kwargs.get("scale", 1.0), dtype=float)
         self.free = np.asarray(kwargs.get("free", False), dtype=bool)
         unit = kwargs.get("unit")
-        if isinstance(unit, str) or isinstance(unit, (int, float)):
+        if isinstance(unit, (str, int, float)):
             unit = Unit(unit)
         self.unit = unit
 
@@ -95,7 +95,8 @@ class VariableHolder(ParamHolder):
         if vt is None or is_none(vt):
             vt = "const"
         if vt not in ("pdf", "dist", "gauss", "const"):
-            raise ValueError(f"var_type must be one of pdf/dist/gauss/const, got {vt}")
+            msg = f"var_type must be one of pdf/dist/gauss/const, got {vt}"
+            raise ValueError(msg)
         self.var_type = vt
         super().__init__(**kwargs)
         self._sampled_values = None
@@ -125,7 +126,7 @@ class VariableHolder(ParamHolder):
                 [
                     sps.norm(loc=val_, scale=sca_)
                     for val_, sca_ in zip(
-                        np.atleast_1d(self.value), np.atleast_1d(self.errors)
+                        np.atleast_1d(self.value), np.atleast_1d(self.errors), strict=False
                     )
                 ]
             )

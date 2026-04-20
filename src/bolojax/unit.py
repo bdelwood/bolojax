@@ -1,5 +1,7 @@
 """Unit conversion system for bolojax."""
 
+from typing import ClassVar
+
 import numpy as np
 
 
@@ -11,7 +13,7 @@ class Unit:
     *from* SI.
     """
 
-    to_SI_dict: dict[str, float] = {}
+    to_SI_dict: ClassVar[dict[str, float]] = {}
 
     def __init__(self, unit=None):
         if unit is None:
@@ -20,7 +22,8 @@ class Unit:
             return
         if isinstance(unit, str):
             if unit not in self.to_SI_dict:
-                raise KeyError(f"Passed unit '{unit}' not understood by Unit object")
+                msg = f"Passed unit '{unit}' not understood by Unit object"
+                raise KeyError(msg)
             self._SI = self.to_SI_dict[unit]
             self._name = unit
             return

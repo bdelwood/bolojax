@@ -1,6 +1,6 @@
 """Top level configuration."""
 
-import os.path
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
@@ -20,7 +20,7 @@ class SimConfig(BaseModel):
     save_sim: bool = True
     save_optical: bool = True
     freq_resol: float | None = None
-    config_dir: str = os.path.join(os.path.pardir, "config")
+    config_dir: str = str(Path("..") / "config")
 
     def model_post_init(self, __context):
         set_config_dir(self.config_dir)
