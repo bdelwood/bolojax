@@ -2,37 +2,41 @@
 offline analysis of LSST Electrical-Optical testing"""
 
 import os
+
 import numpy as np
 
 CONFIG_DIR = None
 
+
 def is_none(val):
     """Check to see if a value is none"""
-    return val in [None, 'none', 'None', np.nan]
+    return val in [None, "none", "None", np.nan]
+
 
 def is_not_none(val):
     """Check to see if a value is not none"""
-    return val not in [None, 'none', 'None', np.nan]
+    return val not in [None, "none", "None", np.nan]
 
 
 class CfgDir:
-    """ Tiny class to find configuration files"""
+    """Tiny class to find configuration files"""
 
     def __init__(self):
-        """ Constructor """
+        """Constructor"""
         self.config_dir = None
 
     def set_dir(self, val):
-        """ Set the top-level configuration directory"""
+        """Set the top-level configuration directory"""
         self.config_dir = val
 
     def get_dir(self):
-        """ Get the top-level configuration directory"""
+        """Get the top-level configuration directory"""
         return self.config_dir
 
     def cfg_path(self, val):
-        """ Build a path using the top-level configuration directory """
+        """Build a path using the top-level configuration directory"""
         return os.path.normpath(os.path.join(self.config_dir, val))
+
 
 CFG_DIR = CfgDir()
 
@@ -56,7 +60,7 @@ def copy_dict(in_dict, def_dict):
     outdict : `dict`
         Dictionary with arguments selected from in_dict to overide def_dict
     """
-    outdict = {key:in_dict.get(key, val) for key, val in def_dict.items()}
+    outdict = {key: in_dict.get(key, val) for key, val in def_dict.items()}
     return outdict
 
 
@@ -82,7 +86,6 @@ def pop_values(in_dict, keylist):
     return outdict
 
 
-
 def update_dict_from_string(o_dict, key, val, subparser_dict=None):
     """Update a dictionary with sub-dictionaries
 
@@ -101,9 +104,9 @@ def update_dict_from_string(o_dict, key, val, subparser_dict=None):
         The subparsers used to parser the command line
 
     """
-    idx = key.find('.')
+    idx = key.find(".")
     use_key = key[0:idx]
-    remain = key[idx+1:]
+    remain = key[idx + 1 :]
     if subparser_dict is not None:
         try:
             subparser = subparser_dict[use_key[1:]]
@@ -121,11 +124,10 @@ def update_dict_from_string(o_dict, key, val, subparser_dict=None):
     if def_val == val:
         return
 
-    if remain.find('.') < 0:
+    if remain.find(".") < 0:
         o_dict[use_key][remain] = val
     else:
         update_dict_from_string(o_dict[use_key], remain, val)
-
 
 
 def expand_dict_from_defaults_and_elements(default_dict, elem_dict):
@@ -153,21 +155,22 @@ def expand_dict_from_defaults_and_elements(default_dict, elem_dict):
     return o_dict
 
 
-
 def read_txt_to_np(fname):
-    """ Read a txt file to a numpy array """
+    """Read a txt file to a numpy array"""
     ext = os.path.splitext(fname)[-1]
-    if ext.lower() == '.txt':
+    if ext.lower() == ".txt":
         delim = None
-    elif ext.lower() == '.csv':
-        delim = ','
+    elif ext.lower() == ".csv":
+        delim = ","
     else:
         raise ValueError("File %s is not csv or txt")
-    return np.loadtxt(os.path.normpath(fname), unpack=True, dtype=np.float, delimiter=delim)
+    return np.loadtxt(
+        os.path.normpath(fname), unpack=True, dtype=np.float64, delimiter=delim
+    )
 
 
 def reshape_array(val, shape):
-    """ Reshape an array, but not a scalar
+    """Reshape an array, but not a scalar
 
     This is useful for broadcasting many arrays to the same shape
     """

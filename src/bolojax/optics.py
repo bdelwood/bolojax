@@ -1,23 +1,23 @@
-""" Model of optical elements """
+"""Model of optical elements"""
 
 from collections import OrderedDict as odict
 
 import numpy as np
-#import pdb
 
+# import pdb
 from cfgmdl import Model
 from cfgmdl.tools import build_class
 from cfgmdl.utils import is_not_none
 
-from .cfg import Variable
 from . import physics
+from .cfg import Variable
 
 
 class ChannelResults:
-    """ Performance parameters for one optical element for one channel """
+    """Performance parameters for one optical element for one channel"""
 
     def __init__(self):
-        """ Constructor """
+        """Constructor"""
         self.temp = None
         self.refl = None
         self.spil = None
@@ -28,29 +28,49 @@ class ChannelResults:
         self.emiss = None
         self.effic = None
 
-    #@Function
+    # @Function
     @staticmethod
-    def emission(freqs, abso, spil, spil_temp, scat, scat_temp, temp): #pylint: disable=too-many-arguments
-        """ Compute the emission for this element """
-        return abso +\
-          spil * physics.pow_frac(spil_temp, temp, freqs) +\
-          scat * physics.pow_frac(scat_temp, temp, freqs)
+    def emission(freqs, abso, spil, spil_temp, scat, scat_temp, temp):  # pylint: disable=too-many-arguments
+        """Compute the emission for this element"""
+        return (
+            abso
+            + spil * physics.pow_frac(spil_temp, temp, freqs)
+            + scat * physics.pow_frac(scat_temp, temp, freqs)
+        )
 
-    #@Function
+    # @Function
     @staticmethod
     def efficiency(refl, abso, spil, scat):
-        """ Compute the transmission for this element """
-        return (1-refl)*(1-abso)*(1-spil)*(1-scat)
+        """Compute the transmission for this element"""
+        return (1 - refl) * (1 - abso) * (1 - spil) * (1 - scat)
 
     def calculate(self, freqs):
-        """ Compute the results for the frequencies of interest for a given channel """
-        emiss_shape = np.broadcast(freqs, self.abso, self.spil, self.spil_temp, self.scat, self.scat_temp, self.temp).shape
-        self.emiss = self.emission(freqs, self.abso, self.spil, self.spil_temp, self.scat, self.scat_temp, self.temp).reshape(emiss_shape)
+        """Compute the results for the frequencies of interest for a given channel"""
+        emiss_shape = np.broadcast(
+            freqs,
+            self.abso,
+            self.spil,
+            self.spil_temp,
+            self.scat,
+            self.scat_temp,
+            self.temp,
+        ).shape
+        self.emiss = self.emission(
+            freqs,
+            self.abso,
+            self.spil,
+            self.spil_temp,
+            self.scat,
+            self.scat_temp,
+            self.temp,
+        ).reshape(emiss_shape)
         effic_shape = np.broadcast(self.refl, self.abso, self.spil, self.scat).shape
-        self.effic = self.efficiency(self.refl, self.abso, self.spil, self.scat).reshape(effic_shape)
+        self.effic = self.efficiency(
+            self.refl, self.abso, self.spil, self.scat
+        ).reshape(effic_shape)
 
     def __call__(self):
-        """ Return key parameters """
+        """Return key parameters"""
         return (self.effic, self.emiss, self.temp)
 
 
@@ -68,30 +88,33 @@ class OpticalElement(Model):
     scatter_frac = Variable(required=True)
 
     def __init__(self, **kwargs):
-        """ Constructor """
-        super(OpticalElement, self).__init__(**kwargs)
+        """Constructor"""
+        super().__init__(**kwargs)
         self.elem_name = None
         self.results = dict()
 
     def unsample(self):
-        """ Clear out the samples parameters """
+        """Clear out the samples parameters"""
         self.temperature.unsample()
         self.reflection.unsample()
         self.spillover.unsample()
         self.scatter_frac.unsample()
 
     def sample(self, freqs, nsample, chan_idx):
-        """ Sample input parameters for a given channel """
+        """Sample input parameters for a given channel"""
         self.temperature.sample(nsample)
         results_ = ChannelResults()
         results_.temp = self.temperature.SI
         results_.refl = self.reflection.sample(nsample, freqs, chan_idx)
         results_.spil = self.spillover.sample(nsample, freqs, chan_idx)
         if is_not_none(self.surface_rough) and np.isfinite(self.surface_rough.SI).all():
-            results_.scat = 1. - physics.ruze_eff(freqs, self.surface_rough.SI)
+            results_.scat = 1.0 - physics.ruze_eff(freqs, self.surface_rough.SI)
         else:
             results_.scat = self.scatter_frac.sample(nsample, freqs, chan_idx)
-        if is_not_none(self.spillover_temp) and np.isfinite(self.spillover_temp.SI).all():
+        if (
+            is_not_none(self.spillover_temp)
+            and np.isfinite(self.spillover_temp.SI).all()
+        ):
             results_.spil_temp = self.spillover_temp.SI
         else:
             results_.spil_temp = results_.temp
@@ -103,7 +126,7 @@ class OpticalElement(Model):
         return results_
 
     def compute_channel(self, channel, freqs, nsample):
-        """ Compute the results for the frequencies of interest for a given channel """
+        """Compute the results for the frequencies of interest for a given channel"""
         self.unsample()
         results_ = self.sample(freqs, nsample, channel.idx)
         results_.abso = self.calc_abso(channel, freqs, nsample)
@@ -111,57 +134,69 @@ class OpticalElement(Model):
         return results_()
 
     def calc_abso(self, channel, freqs, nsample):
-        """ Compute the absorption for a given channel """
+        """Compute the absorption for a given channel"""
         return self.absorption.sample(nsample, freqs, channel.idx)
 
 
 class Mirror(OpticalElement):
-    """ OpticalElement sub-class for mirrors """
+    """OpticalElement sub-class for mirrors"""
 
     conductivity = Variable()
 
     def calc_abso(self, channel, freqs, nsample):
-        """ Compute the absorption for a given channel """
+        """Compute the absorption for a given channel"""
         if is_not_none(self.conductivity) and np.isfinite(self.conductivity.SI).all():
-            return 1. - physics.ohmic_eff(freqs, self.conductivity.SI)
-        return super(Mirror, self).calc_abso(channel, freqs, nsample)
+            return 1.0 - physics.ohmic_eff(freqs, self.conductivity.SI)
+        return super().calc_abso(channel, freqs, nsample)
 
 
 class Dielectric(OpticalElement):
-    """ OpticalElement sub-class for dielectrics """
+    """OpticalElement sub-class for dielectrics"""
 
     thickness = Variable()
     index = Variable()
     loss_tangent = Variable()
 
     def calc_abso(self, channel, freqs, nsample):
-        """ Compute the absorption for a given channel """
-        if is_not_none(self.thickness) and is_not_none(self.index) and is_not_none(self.loss_tangent):
-            return physics.dielectric_loss(freqs, self.thickness.SI, self.index.SI, self.loss_tangent.SI)
-        return super(Dielectric, self).calc_abso(channel, freqs, nsample)
+        """Compute the absorption for a given channel"""
+        if (
+            is_not_none(self.thickness)
+            and is_not_none(self.index)
+            and is_not_none(self.loss_tangent)
+        ):
+            return physics.dielectric_loss(
+                freqs, self.thickness.SI, self.index.SI, self.loss_tangent.SI
+            )
+        return super().calc_abso(channel, freqs, nsample)
 
 
 class ApertureStop(OpticalElement):
-    """ OpticalElement sub-class for apertures """
+    """OpticalElement sub-class for apertures"""
 
     def calc_abso(self, channel, freqs, nsample):
-        """ Compute the absorption for a given channel """
+        """Compute the absorption for a given channel"""
         pixel_size = channel.pixel_size()
         f_number = channel.camera.f_number()
         waist_factor = channel.waist_factor()
 
-        if is_not_none(pixel_size) and is_not_none(f_number) and is_not_none(waist_factor):
-            return 1. - physics.spill_eff(np.array(freqs), pixel_size, f_number, waist_factor)
-        return super(ApertureStop, self).calc_abso(channel, freqs, nsample)
+        if (
+            is_not_none(pixel_size)
+            and is_not_none(f_number)
+            and is_not_none(waist_factor)
+        ):
+            return 1.0 - physics.spill_eff(
+                np.array(freqs), pixel_size, f_number, waist_factor
+            )
+        return super().calc_abso(channel, freqs, nsample)
 
 
 class Optics_Base(Model):
     """Base class for optical chains"""
 
     def __init__(self, **kwargs):
-        """ Constructor """
+        """Constructor"""
 
-        super(Optics_Base, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.elements = odict()
         self.mirrors = odict()
         self.dielectics = odict()
@@ -178,9 +213,8 @@ class Optics_Base(Model):
                 self.apertureStops[key] = val
 
 
-
 def build_optics_class(name="Optics", **kwargs):
-    """ Build a class that consists of a set of OpticalElements
+    """Build a class that consists of a set of OpticalElements
 
     Parameter
     ---------
@@ -195,5 +229,10 @@ def build_optics_class(name="Optics", **kwargs):
         The new class, which has all the requested properties
 
     """
-    type_dict = {None:OpticalElement, 'Mirror':Mirror, 'Dielectric':Dielectric, 'ApertureStop':ApertureStop}
-    return build_class(name, (Optics_Base, ), [kwargs], [type_dict])
+    type_dict = {
+        None: OpticalElement,
+        "Mirror": Mirror,
+        "Dielectric": Dielectric,
+        "ApertureStop": ApertureStop,
+    }
+    return build_class(name, (Optics_Base,), [kwargs], [type_dict])

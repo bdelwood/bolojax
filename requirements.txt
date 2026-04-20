@@ -1,6 +1,0 @@
-numpy
-astropy
-pyyaml
-cfgmdl
-scipy
-h5py

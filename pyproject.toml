@@ -1,0 +1,139 @@
+[project]
+name = "bolojax"
+dynamic = ["version"]
+description = "Bolometric sensitivity calculator for CMB instruments"
+authors = [{ name = "Brodi Elwood", email = "bdelwood@fas.harvard.edu" }]
+requires-python = ">=3.10"
+readme = "README.md"
+license = "BSD-3-Clause"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy>=1.24,<2",
+    "scipy",
+    "h5py",
+    "astropy",
+    "pyyaml",
+    "cfgmdl",
+]
+
+[project.scripts]
+bolojax = "bolojax.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "coverage[toml]>=7",
+    "ruff>=0.9",
+    "pre-commit>=3",
+    "pyrefly>=0.58",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch]
+version.source = "vcs"
+version.vcs = "git"
+version.raw-options.version_scheme = "no-guess-dev"
+metadata.allow-direct-references = true
+build.hooks.vcs.version-file = "src/bolojax/_version.py"
+
+[tool.hatch.build.targets]
+sdist = { include = ["src/bolojax"] }
+
+[tool.hatch.build.targets.wheel]
+include = ["src/bolojax"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/bolojax" = "bolojax"
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+addopts = ["-ra", "--showlocals"]
+filterwarnings = [
+    "error",
+    # cfgmdl and astropy emit deprecation warnings
+    # TODO: replace cfgmdl with Pydantic, and upgrade astropy when we go from np v2
+    "ignore::DeprecationWarning:cfgmdl",
+    "ignore::DeprecationWarning:astropy",
+    # numpy divide-by-zero in Planck function at T=0
+    "ignore:divide by zero:RuntimeWarning",
+    "ignore:invalid value:RuntimeWarning",
+    # subprocess leak from astropy FITS writing
+    "ignore:subprocess:ResourceWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+log_level = "INFO"
+testpaths = ["tests"]
+
+[tool.coverage]
+run.source = ["bolojax"]
+run.branch = true
+report.show_missing = true
+report.exclude_also = ['\.\.\.', 'if typing.TYPE_CHECKING:']
+
+[tool.pyright]
+typeCheckingMode = "basic"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+show-fixes = true
+exclude = [".venv"]
+
+[tool.ruff.lint]
+extend-select = [
+    "ARG",  # flake8-unused-arguments
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "EM",   # flake8-errmsg
+    "EXE",  # flake8-executable
+    "FA",   # flake8-future-annotations
+    "FURB", # refurb
+    "I",    # isort
+    "ICN",  # flake8-import-conventions
+    "ISC",  # flake8-implicit-str-concat
+    "NPY",  # numpy-specific rules
+    "PERF", # perflint
+    "PGH",  # pygrep-hooks
+    "PIE",  # flake8-pie
+    "PL",   # pylint
+    "PT",   # flake8-pytest-style
+    "PTH",  # flake8-use-pathlib
+    "RET",  # flake8-return
+    "RSE",  # flake8-raise
+    "RUF",  # ruff-specific
+    "SIM",  # flake8-simplify
+    "T10",  # flake8-debugger
+    "T20",  # flake8-print
+    "TRY",  # tryceratops
+    "UP",   # pyupgrade
+    "YTT",  # flake8-2020
+]
+ignore = [
+    "PLR09",   # too many arguments/branches/etc
+    "PLR2004", # magic value in comparison (physics code)
+    "N802",    # math variable naming
+    "N803",    # math variable naming
+    "N806",    # math variable naming
+    "ISC001",  # conflicts with ruff formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["T20"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyrefly]
+project-excludes = ["**/.venv*"]
+ignore-missing-imports = ["cfgmdl.*", "scipy.*", "astropy.*", "h5py.*"]

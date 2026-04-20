@@ -1,15 +1,14 @@
-"""Functions to store analysis results as astropy data tables  """
+"""Functions to store analysis results as astropy data tables"""
 
 import os
 
 import h5py
-
 from astropy.io import fits
 from astropy.table import Table
 
 # Make sure we can recognize usual suffixes
-HDF5_SUFFIXS = ['.hdf', '.h5', '.hd5', '.hdf5']
-FITS_SUFFIXS = ['.fit', '.fits']
+HDF5_SUFFIXS = [".hdf", ".h5", ".hd5", ".hdf5"]
+FITS_SUFFIXS = [".fit", ".fits"]
 
 
 def create_dict_from_guard_rows(col_dict):
@@ -52,6 +51,7 @@ class TableDict:
     and a few helper functions, e.g., to add new tables to the dictionary
     and to read and write files, either as FITS or HDF5 files.
     """
+
     def __init__(self, filepath=None, tablelist=None, primary=None):
         """C'tor
 
@@ -152,7 +152,6 @@ class TableDict:
         o_dict = {self.make_datatable(key, val) for key, val in data.items()}
         return o_dict
 
-
     def save_datatables(self, filepath, **kwargs):
         """Save all of the `Table` objects in this object to a file
 
@@ -183,8 +182,9 @@ class TableDict:
             hdulist = fits.HDUList(hlist)
             hdulist.writeto(filepath, overwrite=True, **kwargs)
         else:
-            raise ValueError("Can only write pickle and hdf5 files for now, not %s" % extype)
-
+            raise ValueError(
+                "Can only write pickle and hdf5 files for now, not %s" % extype
+            )
 
     def load_datatables(self, filepath, **kwargs):
         """Read a set of `Table` objects from a file into this object
@@ -201,7 +201,7 @@ class TableDict:
         ValueError : If the input file type is not known.
         """
         extype = os.path.splitext(filepath)[1]
-        tablelist = kwargs.get('tablelist', None)
+        tablelist = kwargs.get("tablelist")
         if extype in HDF5_SUFFIXS:
             hdffile = h5py.File(filepath)
             keys = hdffile.keys()
@@ -212,6 +212,10 @@ class TableDict:
             hdulist = fits.open(filepath)
             for hdu in hdulist[1:]:
                 if tablelist is None or hdu.name.lower() in tablelist:
-                    self._table_dict[hdu.name.lower()] = Table.read(filepath, hdu=hdu.name)
+                    self._table_dict[hdu.name.lower()] = Table.read(
+                        filepath, hdu=hdu.name
+                    )
         else:
-            raise ValueError("Can only read pickle and hdf5 files for now, not %s" % extype)
+            raise ValueError(
+                "Can only read pickle and hdf5 files for now, not %s" % extype
+            )
