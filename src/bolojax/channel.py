@@ -1,105 +1,110 @@
-"""Channel model"""
+"""Channel model."""
+
+from __future__ import annotations
+
+from typing import Any, ClassVar
 
 import numpy as np
-from cfgmdl import Model, Property
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from . import noise, physics
-
-# from .unit import Unit
-from .cfg import Variable
+from .cfg import Var
 from .sky import Universe
 from .utils import is_not_none
 
 
-class Channel(Model):  # pylint: disable=too-many-instance-attributes
-    """Channel Model"""
+class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
+    """Channel Model."""
 
-    _min_tc_tb_diff = 0.010
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-    band_center = Variable(unit="GHz")
-    fractional_bandwidth = Variable(default=0.35)
-    band_response = Variable(default=1.0)
+    _min_tc_tb_diff: ClassVar[float] = 0.010
 
-    det_eff = Variable(default=1.0)
-    squid_nei = Variable(default=1.0, unit="pA/rtHz")
-    bolo_resistance = Variable(default=1.0, unit="Ohm")
+    band_center: Var("GHz") = None
+    fractional_bandwidth: Var() = 0.35
+    band_response: Var() = 1.0
 
-    pixel_size = Variable(default=6.8, unit="mm")
-    waist_factor = Variable(default=3.0)
+    det_eff: Var() = 1.0
+    squid_nei: Var("pA/rtHz") = 1.0
+    bolo_resistance: Var("Ohm") = 1.0
 
-    Tc = Variable(default=0.165, unit="K")
-    Tc_fraction = Variable()
+    pixel_size: Var("mm") = 6.8
+    waist_factor: Var() = 3.0
 
-    num_det_per_water = Property(dtype=int, default=542)
-    num_wafer_per_optics_tube = Property(dtype=int, default=1)
-    num_optics_tube = Property(dtype=int, default=3)
+    Tc: Var("K") = 0.165
+    Tc_fraction: Var() = None
 
-    psat = Variable()
-    psat_factor = Variable(default=3.0)
+    num_det_per_water: int = 542
+    num_wafer_per_optics_tube: int = 1
+    num_optics_tube: int = 3
 
-    read_frac = Variable(default=0.1)
-    carrier_index = Variable(default=3)
-    G = Variable(unit="pW/K")
-    Flink = Variable()
-    Yield = Variable()
-    response_factor = Variable()
-    nyquist_inductance = Variable()
+    psat: Var() = None
+    psat_factor: Var() = 3.0
 
-    noise_calc = noise.Noise()
+    read_frac: Var() = 0.1
+    carrier_index: Var() = 3
+    G: Var("pW/K") = None
+    Flink: Var() = None
+    Yield: Var() = None
+    response_factor: Var() = None
+    nyquist_inductance: Var() = None
 
-    def __init__(self, **kwargs):
-        """Constructor"""
-        self._optical_effic = None
-        self._optical_emiss = None
-        self._optical_temps = None
-        self._sky_temp_dict = None
-        self._sky_tran_dict = None
-        self._det_effic = None
-        self._det_emiss = None
-        self._det_temp = None
-        self._camera = None
-        self._idx = None
-        super().__init__(**kwargs)
-        self._freqs = None
-        self._flo = None
-        self._fhi = None
-        self._freq_mask = None
-        self.bandwidth = None
+    noise_calc: ClassVar[noise.Noise] = noise.Noise()
+
+    # Private runtime state
+    _optical_effic: Any = PrivateAttr(default=None)
+    _optical_emiss: Any = PrivateAttr(default=None)
+    _optical_temps: Any = PrivateAttr(default=None)
+    _sky_temp_dict: Any = PrivateAttr(default=None)
+    _sky_tran_dict: Any = PrivateAttr(default=None)
+    _det_effic: Any = PrivateAttr(default=None)
+    _det_emiss: Any = PrivateAttr(default=None)
+    _det_temp: Any = PrivateAttr(default=None)
+    _camera: Any = PrivateAttr(default=None)
+    _idx: Any = PrivateAttr(default=None)
+    _freqs: Any = PrivateAttr(default=None)
+    _flo: Any = PrivateAttr(default=None)
+    _fhi: Any = PrivateAttr(default=None)
+    _freq_mask: Any = PrivateAttr(default=None)
+    _bandwidth: Any = PrivateAttr(default=None)
+
+    @property
+    def bandwidth(self):
+        return self._bandwidth
+
+    @bandwidth.setter
+    def bandwidth(self, value):
+        self._bandwidth = value
 
     def set_camera(self, camera, idx):
-        """Set the parent camera and the channel index"""
+        """Set the parent camera and the channel index."""
         self._camera = camera
         self._idx = idx
 
     def sample(self, nsamples):
-        """Sample PDF parameters"""
+        """Sample PDF parameters."""
         self.det_eff.sample(nsamples)
         self.squid_nei.sample(nsamples)
         self.bolo_resistance.sample(nsamples)
 
     @property
     def camera(self):
-        """Return the parent camera"""
         return self._camera
 
     @property
     def freqs(self):
-        """Return the evaluation frequencies"""
         return self._freqs
 
     @property
     def flo(self):
-        """Return the -3dB point"""
         return self._flo
 
     @property
     def fhi(self):
-        """Return the +3dB point"""
         return self._fhi
 
     @property
     def ndet(self):
-        """Return the total number of detectors per channel"""
         return (
             self.num_det_per_water
             * self.num_wafer_per_optics_tube
@@ -108,11 +113,10 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
 
     @property
     def idx(self):
-        """Return the channel index"""
         return self._idx
 
     def photon_NEP(self, elem_power, elems=None, ap_names=None):
-        """Return the photon NEP given the power in the element in the optical chain"""
+        """Return the photon NEP given the power in the element in the optical chain."""
         if elems is None:
             return self.noise_calc.photon_NEP(elem_power, self._freqs)
         det_pitch = self.pixel_size.SI / (
@@ -132,14 +136,14 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
             return np.broadcast_to(self.psat.SI, np.shape(opt_pow))
         if is_not_none(self.psat_factor) and np.isfinite(self.psat_factor.SI):
             return opt_pow * self.psat_factor.SI
-        return opt_pow * 3.0  # fallback default
+        return opt_pow * 3.0
 
     def bolo_Psat(self, opt_pow):
-        """Return the PSAT used in the computation"""
+        """Return the PSAT used in the computation."""
         return self._resolve_psat(opt_pow)
 
     def bolo_G(self, opt_pow):
-        """Return the Bolometeric G factor used in the computation"""
+        """Return the Bolometric G factor used in the computation."""
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
         n = self.carrier_index.SI
@@ -150,7 +154,7 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
         return g
 
     def bolo_Flink(self):
-        """Return the Bolometeric f-link used in the computation"""
+        """Return the Bolometric f-link used in the computation."""
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
         n = self.carrier_index.SI
@@ -161,7 +165,7 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
         return flink
 
     def bolo_NEP(self, opt_pow):
-        """Return the bolometric NEP given the detector details"""
+        """Return the bolometric NEP given the detector details."""
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
         n = self.carrier_index.SI
@@ -176,7 +180,7 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
         return noise.bolo_NEP(flink, g, tc)
 
     def read_NEP(self, opt_pow):
-        """Return the readout NEP given the detector details"""
+        """Return the readout NEP given the detector details."""
         if np.isnan(self.squid_nei.SI).any():
             return None
         if np.isnan(self.bolo_resistance.SI).any():
@@ -195,7 +199,7 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
         )
 
     def compute_evaluation_freqs(self, freq_resol=None):
-        """Compute and return the evaluation frequencies"""
+        """Compute and return the evaluation frequencies."""
         self.bandwidth = self.band_center.SI * self.fractional_bandwidth.SI
         if freq_resol is None:
             freq_resol = 0.05 * self.bandwidth
@@ -216,7 +220,7 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
         return self._freqs
 
     def eval_optical_chain(self, nsample=0, freq_resol=None):
-        """Evaluate the performance of the optical chain for this channel"""
+        """Evaluate the performance of the optical chain for this channel."""
         self.compute_evaluation_freqs(freq_resol)
         self._optical_effic = []
         self._optical_emiss = []
@@ -228,19 +232,18 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
             self._optical_temps.append(temps)
 
     def eval_det_response(self, nsample=0, freq_resol=None):
-        """Evaluate the detector response for this channel"""
+        """Evaluate the detector response for this channel."""
         self._freqs = self.compute_evaluation_freqs(freq_resol)
         self.band_response.sample(nsample, self._freqs)
         self.det_eff.sample(nsample)
-        # def_eff_shaped = np.expand_dims(self.det_eff(), -1)
         self._det_effic = self.band_response.SI * self.det_eff.SI
         self._det_emiss = 0.0
         self._det_temp = self._camera.bath_temperature()
 
     def eval_sky(self, universe, freq_resol=None):
-        """Evaluate the sky parameters for this channel
+        """Evaluate the sky parameters for this channel.
 
-        This is done here, b/c the frequencies we care about are chanel dependent.
+        This is done here, b/c the frequencies we care about are channel dependent.
         """
         self._freqs = self.compute_evaluation_freqs(freq_resol)
         self._sky_temp_dict = universe.temp(self._freqs)
@@ -248,35 +251,28 @@ class Channel(Model):  # pylint: disable=too-many-instance-attributes
 
     @property
     def optical_effic(self):
-        """Return the optical element efficiecies for this channel"""
         return self._optical_effic
 
     @property
     def optical_emiss(self):
-        """Return the optical element emissivities for this channel"""
         return self._optical_emiss
 
     @property
     def optical_temps(self):
-        """Return the optical element temperatures for this channel"""
         return self._optical_temps
 
     @property
     def sky_names(self):
-        """Return the list of the names of the sky components"""
         return list(self._sky_temp_dict.keys())
 
     @property
     def sky_temps(self):
-        """Return the sky component temperatures for this channel"""
         return [self._sky_temp_dict.get(k) for k in Universe.sources]
 
     @property
     def sky_effic(self):
-        """Return the sky component efficiecies for this channel"""
         return [self._sky_tran_dict.get(k, 1.0) for k in Universe.sources]
 
     @property
     def sky_emiss(self):
-        """Return the sky component emissivities for this channel"""
         return [1] * len(Universe.sources)

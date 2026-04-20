@@ -1,17 +1,19 @@
-"""Instrument readout model"""
+"""Instrument readout model."""
 
-from cfgmdl import Model
+from __future__ import annotations
 
-from .cfg import Variable
+from pydantic import BaseModel, ConfigDict
+
+from .cfg import Var
 
 
-class Readout(Model):
-    """
-    Instrument readout model
-    """
+class Readout(BaseModel):
+    """Instrument readout model."""
 
-    squid_nei = Variable()
-    read_noise_frac = Variable(default=0.1)
-    dwell_time = Variable()
-    revisit_rate = Variable()
-    nyquist_inductance = Variable()
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
+
+    squid_nei: Var() = None
+    read_noise_frac: Var() = 0.1
+    dwell_time: Var() = None
+    revisit_rate: Var() = None
+    nyquist_inductance: Var() = None

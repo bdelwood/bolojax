@@ -12,12 +12,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-    "numpy>=1.24,<2",
+    "numpy>=1.24",
     "scipy",
     "h5py",
     "astropy",
     "pyyaml",
-    "cfgmdl",
+    "pydantic>=2.7",
+    "pint",
+    "pydantic-pint",
 ]
 
 [project.scripts]
@@ -57,9 +59,6 @@ minversion = "9.0"
 addopts = ["-ra", "--showlocals"]
 filterwarnings = [
     "error",
-    # cfgmdl and astropy emit deprecation warnings
-    # TODO: replace cfgmdl with Pydantic, and upgrade astropy when we go from np v2
-    "ignore::DeprecationWarning:cfgmdl",
     "ignore::DeprecationWarning:astropy",
     # numpy divide-by-zero in Planck function at T=0
     "ignore:divide by zero:RuntimeWarning",
@@ -136,4 +135,4 @@ convention = "google"
 
 [tool.pyrefly]
 project-excludes = ["**/.venv*"]
-ignore-missing-imports = ["cfgmdl.*", "scipy.*", "astropy.*", "h5py.*"]
+ignore-missing-imports = ["scipy.*", "astropy.*", "h5py.*"]

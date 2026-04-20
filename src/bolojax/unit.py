@@ -1,8 +1,57 @@
-"""Unit conversions"""
+"""Unit conversion system for bolojax."""
 
-from cfgmdl import Unit
+import numpy as np
 
-to_SI_dict = {
+
+class Unit:
+    """Simple SI unit conversion.
+
+    Maintains a class-level registry mapping unit names to SI conversion
+    factors.  Calling an instance converts *to* SI; ``inverse`` converts
+    *from* SI.
+    """
+
+    to_SI_dict: dict[str, float] = {}
+
+    def __init__(self, unit=None):
+        if unit is None:
+            self._SI = 1.0
+            self._name = ""
+            return
+        if isinstance(unit, str):
+            if unit not in self.to_SI_dict:
+                raise KeyError(f"Passed unit '{unit}' not understood by Unit object")
+            self._SI = self.to_SI_dict[unit]
+            self._name = unit
+            return
+        self._SI = float(unit)
+        self._name = "a.u."
+
+    @property
+    def name(self):
+        return self._name
+
+    def __call__(self, val):
+        """Convert *val* from native units to SI."""
+        if val is None:
+            return None
+        return np.array(val) * self._SI
+
+    def inverse(self, val):
+        """Convert *val* from SI to native units."""
+        if val is None:
+            return None
+        return np.array(val) / self._SI
+
+    @classmethod
+    def update(cls, a_dict):
+        """Register additional unit conversions."""
+        cls.to_SI_dict.update(a_dict)
+
+
+# ── bolojax custom units ──────────────────────────────────────────────
+
+_to_SI = {
     "GHz": 1.0e09,
     "mm": 1.0e-03,
     "aW/rtHz": 1.0e-18,
@@ -15,7 +64,7 @@ to_SI_dict = {
     "uK-rts": 1.0e-06,
     "uK-amin": 1.0e-06,
     "uK^2": 1.0e-12,
-    "yr": (365.25 * 24.0 * 60.0 * 60),
+    "yr": 365.25 * 24.0 * 60.0 * 60.0,
     "e-4": 1.0e-04,
     "e+6": 1.0e06,
     "um RMS": 1.0e-06,
@@ -31,8 +80,10 @@ to_SI_dict = {
     "K_RJ": 1.0,
     "K^2": 1.0,
     "s": 1.0,
-    "deg": 1,
+    "deg": 1.0,
     "NA": 1.0,
 }
 
-Unit.update(to_SI_dict)
+Unit.update(_to_SI)
+
+__all__ = ["Unit"]

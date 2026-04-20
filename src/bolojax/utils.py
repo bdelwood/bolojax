@@ -9,13 +9,17 @@ CONFIG_DIR = None
 
 
 def is_none(val):
-    """Check to see if a value is none"""
-    return val in [None, "none", "None", np.nan]
+    """Check for values equivalent to None (None, 'none', 'None')."""
+    if not isinstance(val, (type(None), str)):
+        return False
+    return val in [None, "none", "None"]
 
 
 def is_not_none(val):
-    """Check to see if a value is not none"""
-    return val not in [None, "none", "None", np.nan]
+    """Check for values NOT equivalent to None."""
+    if not isinstance(val, (type(None), str)):
+        return True
+    return val not in [None, "none", "None"]
 
 
 class CfgDir:

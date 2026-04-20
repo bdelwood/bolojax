@@ -1,25 +1,26 @@
-"""Sensitivity calculation"""
+"""Sensitivity calculation."""
+
+from __future__ import annotations
 
 import sys
 from collections import OrderedDict as odict
+from typing import ClassVar
 
 import numpy as np
-from cfgmdl import Model
 
 from . import noise, physics
-from .cfg import Output
-from .unit import Unit
+from .cfg import OutputField
 
 
 def _Trj_over_Tcmb(freqs):
-    """Convert to RJ temperature from CMB temperature"""
+    """Convert to RJ temperature from CMB temperature."""
     factor_spec = physics.Trj_over_Tb(freqs, physics.Tcmb)
     bw = freqs[-1] - freqs[0]
     return np.trapz(factor_spec, freqs) / bw
 
 
 def bcast_list(array_list):
-    """Broadcast a list of arrays to a single shape"""
+    """Broadcast a list of arrays to a single shape."""
     bcast = np.broadcast(*array_list)
     return np.array([np.array(v) for v in bcast]).T.reshape(
         [bcast.numiter] + list(bcast.shape)
@@ -29,49 +30,49 @@ def bcast_list(array_list):
 NSKY_SRC = 4
 
 
-class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
-    """Sensitivity calculation"""
+class Sensitivity:  # pylint: disable=too-many-instance-attributes
+    """Sensitivity calculation."""
 
-    effic = Output()
-    opt_power = Output(unit=Unit("pW"))
-    P_sat = Output(unit=Unit("pW"))
-    G = Output(unit=Unit("pW/K"))
-    Flink = Output()
+    _output_fields: ClassVar[dict[str, OutputField]] = {}
 
-    tel_power = Output(unit=Unit("pW"))
-    sky_power = Output(unit=Unit("pW"))
+    effic = OutputField()
+    opt_power = OutputField(unit="pW")
+    P_sat = OutputField(unit="pW")
+    G = OutputField(unit="pW/K")
+    Flink = OutputField()
 
-    tel_rj_temp = Output(unit=Unit("K"))
-    sky_rj_temp = Output(unit=Unit("K"))
+    tel_power = OutputField(unit="pW")
+    sky_power = OutputField(unit="pW")
 
-    elem_effic = Output()
-    elem_cumul_effic = Output()
-    elem_power_from_sky = Output(unit=Unit("pW"))
-    elem_power_to_det = Output(unit=Unit("pW"))
+    tel_rj_temp = OutputField(unit="K")
+    sky_rj_temp = OutputField(unit="K")
 
-    NEP_bolo = Output(unit=Unit("aW/rtHz"))
-    NEP_read = Output(unit=Unit("aW/rtHz"))
-    NEP_ph = Output(unit=Unit("aW/rtHz"))
-    NEP_ph_corr = Output(unit=Unit("aW/rtHz"))
-    NEP = Output(unit=Unit("aW/rtHz"))
-    NEP_corr = Output(unit=Unit("aW/rtHz"))
+    elem_effic = OutputField()
+    elem_cumul_effic = OutputField()
+    elem_power_from_sky = OutputField(unit="pW")
+    elem_power_to_det = OutputField(unit="pW")
 
-    NET = Output(unit=Unit("uK-rts"))
-    NET_corr = Output(unit=Unit("uK-rts"))
+    NEP_bolo = OutputField(unit="aW/rtHz")
+    NEP_read = OutputField(unit="aW/rtHz")
+    NEP_ph = OutputField(unit="aW/rtHz")
+    NEP_ph_corr = OutputField(unit="aW/rtHz")
+    NEP = OutputField(unit="aW/rtHz")
+    NEP_corr = OutputField(unit="aW/rtHz")
 
-    NET_RJ = Output(unit=Unit("uK-rts"))
-    NET_corr_RJ = Output(unit=Unit("uK-rts"))
+    NET = OutputField(unit="uK-rts")
+    NET_corr = OutputField(unit="uK-rts")
 
-    NET_arr = Output(unit=Unit("uK-rts"))
-    NET_arr_RJ = Output(unit=Unit("uK-rts"))
+    NET_RJ = OutputField(unit="uK-rts")
+    NET_corr_RJ = OutputField(unit="uK-rts")
 
-    corr_fact = Output()
+    NET_arr = OutputField(unit="uK-rts")
+    NET_arr_RJ = OutputField(unit="uK-rts")
 
-    map_depth = Output(unit=Unit("uK-amin"))
-    map_depth_RJ = Output(unit=Unit("uK-amin"))
+    corr_fact = OutputField()
 
-    # summary_fields = ['effic', 'opt_power', 'tel_rj_temp', 'sky_rj_temp', 'NEP_bolo', 'NEP_read', 'NEP_ph', 'NEP_ph_corr', 'NEP', 'NEP_corr',
-    #                      'NET', 'NET_corr', 'NET_RJ', 'NET_corr_RJ', 'NET_arr', 'NET_arr_RJ',  'NET_arr_RJ', 'map_depth', 'map_depth_RJ']
+    map_depth = OutputField(unit="uK-amin")
+    map_depth_RJ = OutputField(unit="uK-amin")
+
     summary_fields = [
         "effic",
         "opt_power",
@@ -98,14 +99,16 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
     ]
 
     def __init__(self, channel):
-        """Constructor"""
+        """Constructor."""
 
-        super().__init__()
+        # Initialize all output holders
+        for name, field in type(self)._output_fields.items():
+            setattr(self, field.private_name, field.make_holder())
 
         self._channel = channel
         self._camera = self._channel.camera
         self._instrument = self._camera.instrument
-        self._channel_name = "%s_%i" % (self._camera.name, self._channel.idx)
+        self._channel_name = f"{self._camera.name}_{self._channel.idx}"
         self._summary = None
         self._optical_output = None
 
@@ -120,7 +123,7 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         )
         self._temps = bcast_list(self.temps_list)
 
-        # Buffer both sides of the transmisison array, because we will be taking cumulatimve products that are offset by one
+        # Buffer both sides of the transmission array, because we will be taking cumulative products that are offset by one
         # (i.e., we want the product of all the elements downstream of a particular element)
         self.trans_list = (
             [0.0]
@@ -140,7 +143,6 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         )
         self._ap_names = list(self._instrument.optics.apertureStops.keys())
 
-        # Fix the shapes of the arrays to match
         if len(self._emiss.shape) == 2:
             self._emiss = self._emiss.reshape(
                 (self._emiss.shape[0], 1, 1, self._emiss.shape[1])
@@ -169,7 +171,7 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
             self._elem_power_by_freq * self._elem_cumul_effic_by_freq
         )
 
-        # This is the power coming from up the optical chain getting to a particlar element
+        # This is the power coming from up the optical chain getting to a particular element
         # Note that we have to pull out the padding here
         cumul_power_down = 0.0
         cumul_list_down = []
@@ -179,7 +181,7 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
             cumul_list_down.append(cumul_power_down)
         self._elem_sky_power_by_freq = np.array(cumul_list_down)
 
-        # These are integrated accross the bands (using np.trapz to do trapezoid rule integration)
+        # These are integrated across the bands (using np.trapz to do trapezoid rule integration)
         # Optical power from each element
         self.elem_power_to_det.set_from_SI(
             np.trapz(self._elem_power_to_det_by_freq, self._freqs)
@@ -192,7 +194,7 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         self.elem_effic.set_from_SI(
             np.trapz(self._trans[1:-1], self._freqs) / self._bandwidth
         )
-        # Cumulative efficiency for the test of the optical chain, by element
+        # Cumulative efficiency for the rest of the optical chain, by element
         self.elem_cumul_effic.set_from_SI(
             np.trapz(self._elem_cumul_effic_by_freq, self._freqs) / self._bandwidth
         )
@@ -207,7 +209,7 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
             / self._bandwidth
         )
 
-        # From this point, all everything is intergrated across bands and given by channel
+        # From this point, everything is integrated across bands and given by channel
         self.opt_power.set_from_SI(np.sum(self.elem_power_to_det.SI, axis=0))
 
         self.tel_power.set_from_SI(np.sum(self.elem_power_to_det.SI[NSKY_SRC:], axis=0))
@@ -289,7 +291,6 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
             )
         )
 
-        # JR, find Psat
         to_shape = np.ones(self.NET_corr.SI.shape)
         self.P_sat.set_from_SI(self._channel.bolo_Psat(self.opt_power.SI) * to_shape)
         self.G.set_from_SI(self._channel.bolo_G(self.opt_power.SI) * to_shape)
@@ -299,58 +300,45 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         self.analyze_optical_chain()
 
     def summarize(self):
-        """Compute and cache summary statistics"""
+        """Compute and cache summary statistics."""
         self._summary = odict()
         for key in self.summary_fields:
-            self._summary[key] = self._properties[key].summarize(self)
+            self._summary[key] = type(self)._output_fields[key].summarize(self)
         return self._summary
 
     def analyze_optical_chain(self):
-        """Compute and cache optical output statistics"""
+        """Compute and cache optical output statistics."""
         self._optical_output = odict()
         for key in self.optical_output_fields:
-            self._optical_output[key] = self._properties[key].summarize_by_element(self)
+            self._optical_output[key] = (
+                type(self)._output_fields[key].summarize_by_element(self)
+            )
         return self._optical_output
 
     def print_summary(self, stream=sys.stdout):
-        """Print summary statistics in human-readable format"""
+        """Print summary statistics in human-readable format."""
         for key, val in self._summary.items():
-            stream.write("%s : %s\n" % (key.ljust(20), val))
+            stream.write(f"{key.ljust(20)} : {val}\n")
 
     def print_optical_output(self, stream=sys.stdout):
-        """Print optical output statistics in human-readable format"""
-
+        """Print optical output statistics in human-readable format."""
         elem_power_from_sky = self._optical_output["elem_power_from_sky"]
         elem_power_to_det = self._optical_output["elem_power_to_det"]
         elem_effic = self._optical_output["elem_effic"]
         elem_cumul_effic = self._optical_output["elem_cumul_effic"]
         stream.write(
-            "%s | %s | %s | %s | %s\n"
-            % (
-                "Element".ljust(20),
-                "Power from Sky [pW]".ljust(26),
-                "Power to Det [pW]".ljust(26),
-                "Efficiency".ljust(26),
-                "Cumul. Effic.".ljust(26),
-            )
+            f"{'Element'.ljust(20)} | {'Power from Sky [pW]'.ljust(26)} | {'Power to Det [pW]'.ljust(26)} | {'Efficiency'.ljust(26)} | {'Cumul. Effic.'.ljust(26)}\n"
         )
         for idx, elem in enumerate(self._elem_names):
             stream.write(
-                "%s | %s | %s | %s | %s\n"
-                % (
-                    elem.ljust(20),
-                    elem_power_from_sky.element_string(idx),
-                    elem_power_to_det.element_string(idx),
-                    elem_effic.element_string(idx),
-                    elem_cumul_effic.element_string(idx),
-                )
+                f"{elem.ljust(20)} | {elem_power_from_sky.element_string(idx)} | {elem_power_to_det.element_string(idx)} | {elem_effic.element_string(idx)} | {elem_cumul_effic.element_string(idx)}\n"
             )
 
     def make_sims_table(self, name, table_dict):
-        """Make a table with per-simulation parameters"""
+        """Make a table with per-simulation parameters."""
         o_dict = odict(
             [
-                (key, self._properties[key].__get__(self).value.flatten())
+                (key, type(self)._output_fields[key].__get__(self).value.flatten())
                 for key in self.summary_fields
             ]
         )
@@ -359,11 +347,11 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         except ValueError as msg:
             s = "Column shape mismatch: "
             for k, v in o_dict.items():
-                s += "%s %s, " % (k, v.size)
+                s += f"{k} {v.size}, "
             raise ValueError(s) from msg
 
     def make_optical_table(self, name, table_dict):
-        """Make a table with optical output parameters"""
+        """Make a table with optical output parameters."""
         o_dict = odict()
         for val in self._optical_output.values():
             o_dict.update(val.todict())
@@ -372,7 +360,7 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         return table_dict.make_datatable(name, o_dict)
 
     def make_sum_table(self, name, table_dict):
-        """Make a table with summary parameters"""
+        """Make a table with summary parameters."""
         o_dict = odict()
         for val in self._summary.values():
             o_dict.update(val.todict())
@@ -380,11 +368,11 @@ class Sensitivity(Model):  # pylint: disable=too-many-instance-attributes
         return table_dict.make_datatable(name, o_dict)
 
     def make_tables(self, base_name, table_dict, **kwargs):
-        """Make output tables"""
+        """Make output tables."""
         if kwargs.get("save_sim", True):
-            self.make_sims_table("%s_sims" % base_name, table_dict)
+            self.make_sims_table(f"{base_name}_sims", table_dict)
         if kwargs.get("save_summary", True):
-            self.make_sum_table("%s_summary" % base_name, table_dict)
+            self.make_sum_table(f"{base_name}_summary", table_dict)
         if kwargs.get("save_optical", True):
-            self.make_optical_table("%s_optical" % base_name, table_dict)
+            self.make_optical_table(f"{base_name}_optical", table_dict)
         return table_dict

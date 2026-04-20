@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
-import urllib.request as ul
+import os
 import sys
 import time
-import os
+import urllib.request as ul
 
 
 # Progress monitor
@@ -45,13 +45,13 @@ def main():
     if os.path.exists(atm_file):
         sys.stdout.write("\nSuccessfully downloaded atmosphere file %s." % (fname))
         sys.stdout.write(
-            (
+            
                 "\nADVICE: delete any old atm files (~1 GB each) from BoloCalc"
                 + os.sep
                 + "src"
                 + os.sep
                 + "\n\n"
-            )
+            
         )
         os.rename(atm_file, new_atm_file)
     else:

@@ -1,45 +1,43 @@
-"""Top level configuration"""
+"""Top level configuration."""
 
 import os.path
 
-from cfgmdl import Model, Property
+from pydantic import BaseModel, ConfigDict
 
 from .instrument import Instrument
 from .sky import Universe
 from .utils import set_config_dir
 
 
-class SimConfig(Model):
-    """Simulation configuration"""
+class SimConfig(BaseModel):
+    """Simulation configuration."""
 
-    nsky_sim = Property(dtype=int, default=0)
-    ndet_sim = Property(dtype=int, default=0)
-    save_summary = Property(dtype=bool, default=True)
-    save_sim = Property(dtype=bool, default=True)
-    save_optical = Property(dtype=bool, default=True)
-    freq_resol = Property(dtype=float, default=None)
-    config_dir = Property(dtype=str, default=os.path.join(os.path.pardir, "config"))
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-    def __init__(self, **kwargs):
-        """Constructor"""
-        super().__init__(**kwargs)
+    nsky_sim: int = 0
+    ndet_sim: int = 0
+    save_summary: bool = True
+    save_sim: bool = True
+    save_optical: bool = True
+    freq_resol: float | None = None
+    config_dir: str = os.path.join(os.path.pardir, "config")
+
+    def model_post_init(self, __context):
         set_config_dir(self.config_dir)
 
 
-class Top(Model):
-    """Top level configuration"""
+class Top(BaseModel):
+    """Top level configuration."""
 
-    sim_config = Property(dtype=SimConfig)
-    universe = Property(dtype=Universe)
-    instrument = Property(dtype=Instrument)
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-    def __init__(self, **kwargs):
-        """Constructor"""
-        self.universe = None
-        self.instrument = None
-        super().__init__(**kwargs)
+    sim_config: SimConfig
+    universe: Universe
+    instrument: Instrument
+
+    def model_post_init(self, __context):
         self.universe.atmosphere.set_telescope(self.instrument)
 
     def run(self):
-        """Run the entire analysis"""
+        """Run the entire analysis."""
         self.instrument.run(self.universe, self.sim_config)

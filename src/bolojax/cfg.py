@@ -1,39 +1,110 @@
-"""Class derived from cfgmdl used to configure bolo-calc"""
+"""Configuration field types for bolojax.
+
+Provides ParamHolder, VariableHolder, OutputField, OutputHolder, and the
+``Var`` / ``Out`` pydantic annotation helpers.
+"""
+
+from __future__ import annotations
 
 from collections import OrderedDict as odict
-from collections.abc import Iterable
-from copy import deepcopy
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 import numpy as np
 import scipy.stats as sps
-from cfgmdl import Choice, Parameter, ParamHolder, Property
-from cfgmdl.utils import defaults_decorator, is_none
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 from .interp import FreqInterp
 from .pdf import ChoiceDist
-from .utils import cfg_path
+from .unit import Unit
+from .utils import cfg_path, is_none
+
+
+def expand_dict(in_dict):
+    """Expand a dict with 'default'/'elements' template structure."""
+    if "default" not in in_dict:
+        return in_dict
+    default_dict = in_dict.get("default")
+    elem_dict = in_dict.get("elements")
+    o_dict = odict()
+    for key, elem in elem_dict.items():
+        o_dict[key] = default_dict.copy()
+        if elem is None:
+            continue
+        o_dict[key].update(elem)
+    return o_dict
+
+
+# ── ParamHolder ───────────────────────────────────────────────────────
+
+
+class ParamHolder:
+    """Container for a parameter value with unit conversion."""
+
+    def __init__(self, **kwargs):
+        value = kwargs.get("value", np.nan)
+        if is_none(value):
+            value = np.nan
+        self.value = np.asarray(value, dtype=float)
+        self.errors = np.asarray(kwargs.get("errors", np.nan), dtype=float)
+        self.bounds = np.asarray(kwargs.get("bounds", np.nan), dtype=float)
+        self.scale = np.asarray(kwargs.get("scale", 1.0), dtype=float)
+        self.free = np.asarray(kwargs.get("free", False), dtype=bool)
+        unit = kwargs.get("unit")
+        if isinstance(unit, str) or isinstance(unit, (int, float)):
+            unit = Unit(unit)
+        self.unit = unit
+
+    @property
+    def scaled(self):
+        """Return value * scale."""
+        return self.value * self.scale
+
+    @property
+    def SI(self):
+        """Return the value in SI units."""
+        return self()
+
+    def __call__(self) -> Any:
+        """Return the value converted to SI units."""
+        base_val = self.scaled
+        if self.unit is None:
+            return base_val
+        return self.unit(base_val)
+
+    def set_from_SI(self, val: Any) -> None:
+        """Set the value from an SI-unit quantity."""
+        if self.unit is None:
+            self.value = val
+            return
+        self.value = self.unit.inverse(val)
+
+
+# ── VariableHolder ────────────────────────────────────────────────────
 
 
 class VariableHolder(ParamHolder):
-    """Allows parameter values to be interpolated using a frequency repsonse file"""
-
-    fname = Property(dtype=str, default=None, help="Data file")
-    var_type = Choice(choices=["pdf", "dist", "gauss", "const"], default="const")
+    """ParamHolder with frequency-dependent sampling support."""
 
     def __init__(self, *args, **kwargs):
-        """Constuctor"""
-        self._value = None
-        super().__init__(*args, **kwargs)
+        if args:
+            kwargs["value"] = args[0]
+        self.fname = kwargs.pop("fname", None)
+        vt = kwargs.pop("var_type", "const")
+        if vt is None or is_none(vt):
+            vt = "const"
+        if vt not in ("pdf", "dist", "gauss", "const"):
+            raise ValueError(f"var_type must be one of pdf/dist/gauss/const, got {vt}")
+        self.var_type = vt
+        super().__init__(**kwargs)
         self._sampled_values = None
         self._cached_interps = None
 
     @staticmethod
-    def _channel_value(arr, chan_idx):
-        """Picks the value for a paricular channel,
-
-        This allows using a single parameter to represent multiple channels
-        """
-        if not isinstance(arr, Iterable):
+    def _channel_value(arr: Any, chan_idx: int) -> Any:
+        """Pick the value for a particular channel."""
+        if not isinstance(arr, np.ndarray):
             return arr
         if not arr.shape:
             return arr
@@ -42,7 +113,7 @@ class VariableHolder(ParamHolder):
         return arr[chan_idx]
 
     def _cache_interps(self, freqs=None):
-        """Cache the interpolator object"""
+        """Cache the interpolator object."""
         if self.var_type == "const":
             self._cached_interps = None
             return
@@ -50,7 +121,6 @@ class VariableHolder(ParamHolder):
             if np.isnan(self.errors).any():
                 self._cached_interps = None
                 return
-
             self._cached_interps = np.array(
                 [
                     sps.norm(loc=val_, scale=sca_)
@@ -65,22 +135,18 @@ class VariableHolder(ParamHolder):
             self._cached_interps = np.array(
                 [ChoiceDist(cfg_path(token)) for token in tokens]
             )
-            self._value = np.array([pdf.mean() for pdf in self._cached_interps])
+            self.value = np.array([pdf.mean() for pdf in self._cached_interps])
             return
         self._cached_interps = np.array(
             [FreqInterp(cfg_path(token)) for token in tokens]
         )
         if freqs is None:
-            self._value = np.array([pdf.mean_trans() for pdf in self._cached_interps])
+            self.value = np.array([pdf.mean_trans() for pdf in self._cached_interps])
             return
-        self._value = np.array([pdf.rvs(freqs) for pdf in self._cached_interps])
+        self.value = np.array([pdf.rvs(freqs) for pdf in self._cached_interps])
 
     def rvs(self, nsamples, freqs=None, chan_idx=0):
-        """Sample values
-
-        This just returns the sampled values.
-        It does not store them.
-        """
+        """Sample values (does NOT store them)."""
         self._cache_interps(freqs)
         val = self._channel_value(self.value, chan_idx)
         if self._cached_interps is None or not nsamples:
@@ -93,53 +159,134 @@ class VariableHolder(ParamHolder):
         return interp.rvs(freqs, nsamples).reshape((nsamples, len(freqs)))
 
     def sample(self, nsamples, freqs=None, chan_idx=0):
-        """Sample values
-
-        This stores the sampled values.
-        """
+        """Sample values and store them."""
         self._sampled_values = self.rvs(nsamples, freqs, chan_idx)
         return self.SI
 
     def unsample(self):
-        """This removes the stored sampled values"""
+        """Remove stored sampled values."""
         self._sampled_values = None
 
     @property
     def scaled(self):
-        """Return the product of the value and the scale
-
-        This uses the stored sampled values if they are present.
-        """
+        """Return the product of the value and the scale."""
         if self._sampled_values is not None:
             return self._sampled_values * self.scale
         return super().scaled
 
 
-class Variable(Parameter):
-    """Property sub-class to allow parameter values
-    to be interpolated using a frequency repsonse file
+# ── Pydantic annotation for Variable fields ───────────────────────────
+
+
+class _VarValidator:
+    """Pydantic annotation that converts raw YAML values to VariableHolder."""
+
+    def __init__(self, unit: str | None = None):
+        self._unit: Unit | None = Unit(unit) if unit else None
+
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        unit = self._unit
+
+        def _validate(v: Any) -> VariableHolder:
+            if isinstance(v, VariableHolder):
+                return v
+            kw: dict[str, Any] = {}
+            if unit is not None:
+                kw["unit"] = unit
+            if isinstance(v, Mapping):
+                kw.update(v)
+            elif is_none(v):
+                kw.setdefault("value", np.nan)
+            else:
+                kw["value"] = v
+            return VariableHolder(**kw)
+
+        return core_schema.no_info_plain_validator_function(_validate)
+
+
+def Var(unit=None):
+    """Type annotation for a Variable field.
+
+    Usage::
+
+        band_center: Var("GHz") = None       # optional, defaults to NaN
+        temperature: Var()                    # required (no default)
+        frac_bw: Var() = 0.35                # optional with value default
     """
+    return Annotated[VariableHolder, _VarValidator(unit)]
 
-    defaults = deepcopy(Parameter.defaults)
-    defaults["dtype"] = (VariableHolder, "Data type")
 
-    @defaults_decorator(defaults)
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+# ── OutputHolder & OutputField (for Sensitivity) ──────────────────────
 
-    def _cast_type(self, value, obj=None):
-        """Hook took override type casting"""
-        if is_none(value):
-            return None
-        return value
+
+class OutputHolder(ParamHolder):
+    """ParamHolder for computed output values."""
+
+
+
+class OutputField:
+    """Descriptor for computed output values on the Sensitivity class."""
+
+    def __init__(self, unit: Unit | str | None = None):
+        if isinstance(unit, Unit):
+            self._unit_str: str | None = unit.name or None
+            self._unit: Unit | None = unit
+        elif isinstance(unit, str):
+            self._unit_str = unit
+            self._unit = Unit(unit)
+        else:
+            self._unit_str = None
+            self._unit = None
+        self.public_name: str | None = None
+        self.private_name: str | None = None
+
+    def __set_name__(self, owner, name):
+        self.public_name = name
+        self.private_name = "_" + name
+        # Build class-level registry of output fields
+        if (
+            not hasattr(owner, "_output_fields")
+            or "_output_fields" not in owner.__dict__
+        ):
+            owner._output_fields = {}
+        owner._output_fields[name] = self
+
+    def __get__(self, obj, objtype=None) -> OutputField | OutputHolder | None:
+        if obj is None:
+            return self
+        return getattr(obj, self.private_name, None)
+
+    def __set__(self, obj, value: OutputHolder) -> None:
+        setattr(obj, self.private_name, value)
+
+    def make_holder(self):
+        """Create an empty OutputHolder for this field."""
+        kw = {}
+        if self._unit is not None:
+            kw["unit"] = self._unit
+        return OutputHolder(**kw)
+
+    def summarize(self, obj):
+        """Compute and return summary statistics."""
+        val = getattr(obj, self.private_name).value
+        return StatsSummary(self.public_name, val)
+
+    def summarize_by_element(self, obj):
+        """Compute and return per-element summary statistics."""
+        val = getattr(obj, self.private_name).value
+        val = val.reshape((val.shape[0], np.prod(val.shape[1:])))
+        return StatsSummary(self.public_name, val, axis=1)
+
+
+# ── StatsSummary ──────────────────────────────────────────────────────
 
 
 class StatsSummary:
-    """Summarize the statistical properties of the distribution of computed
-    parameter"""
+    """Summarise the statistical properties of a computed parameter."""
 
     def __init__(self, name, vals, unit_name="", axis=None):
-        """Constructor"""
         self._name = name
         self._unit_name = unit_name
         self._mean = np.mean(vals, axis=axis)
@@ -149,51 +296,18 @@ class StatsSummary:
         self._deltas = np.abs(self._quantiles - self._median)
 
     def element_string(self, idx):
-        """A pretty represenation of the stats for one element"""
-        return "%0.4f +- [%0.4f %0.4f] %s" % (
-            self._mean[idx],
-            self._deltas[1, idx],
-            self._deltas[2, idx],
-            self._unit_name,
-        )
+        """Pretty representation of the stats for one element."""
+        return f"{self._mean[idx]:0.4f} +- [{self._deltas[1, idx]:0.4f} {self._deltas[2, idx]:0.4f}] {self._unit_name}"
 
     def __str__(self):
-        """A pretty represenation of the stats"""
-        return "%0.4f +- [%0.4f %0.4f] %s" % (
-            self._mean,
-            self._deltas[1],
-            self._deltas[2],
-            self._unit_name,
-        )
+        """Pretty representation of the stats."""
+        return f"{self._mean:0.4f} +- [{self._deltas[1]:0.4f} {self._deltas[2]:0.4f}] {self._unit_name}"
 
     def todict(self):
-        """Put the summary stats into a dictionary"""
+        """Put the summary stats into a dictionary."""
         o_dict = odict()
         for vn in ["_mean", "_median", "_std"]:
-            o_dict["%s%s" % (self._name, vn)] = np.atleast_1d(self.__dict__[vn])
+            o_dict[f"{self._name}{vn}"] = np.atleast_1d(self.__dict__[vn])
         for idx, vn in enumerate(["_n_2_sig", "_n_1_sig", "_p_1_sig", "_p_2_sig"]):
-            o_dict["%s%s" % (self._name, vn)] = np.atleast_1d(self._deltas[idx])
+            o_dict[f"{self._name}{vn}"] = np.atleast_1d(self._deltas[idx])
         return o_dict
-
-
-class Output(Parameter):
-    """A property sub-class that will convert values back
-    from SI units to input units.
-
-    Also has a function to provide summary statistics
-    """
-
-    outname = Property(dtype=str, default=None)
-
-    def summarize(self, obj):
-        """Compute and return the summary statistics"""
-        unit_name = ""
-        val = getattr(obj, self.private_name).value
-        return StatsSummary(self.public_name, val, unit_name)
-
-    def summarize_by_element(self, obj):
-        """Compute and return the summary statistics"""
-        unit_name = ""
-        val = getattr(obj, self.private_name).value
-        val = val.reshape((val.shape[0], np.prod(val.shape[1:])))
-        return StatsSummary(self.public_name, val, unit_name, axis=1)

@@ -1,23 +1,21 @@
-"""Model of optical elements"""
+"""Model of optical elements."""
+
+from __future__ import annotations
 
 from collections import OrderedDict as odict
 
 import numpy as np
-
-# import pdb
-from cfgmdl import Model
-from cfgmdl.tools import build_class
-from cfgmdl.utils import is_not_none
+from pydantic import BaseModel, ConfigDict, create_model
 
 from . import physics
-from .cfg import Variable
+from .cfg import Var, expand_dict
+from .utils import is_not_none
 
 
 class ChannelResults:
-    """Performance parameters for one optical element for one channel"""
+    """Performance parameters for one optical element for one channel."""
 
     def __init__(self):
-        """Constructor"""
         self.temp = None
         self.refl = None
         self.spil = None
@@ -28,24 +26,22 @@ class ChannelResults:
         self.emiss = None
         self.effic = None
 
-    # @Function
     @staticmethod
     def emission(freqs, abso, spil, spil_temp, scat, scat_temp, temp):  # pylint: disable=too-many-arguments
-        """Compute the emission for this element"""
+        """Compute the emission for this element."""
         return (
             abso
             + spil * physics.pow_frac(spil_temp, temp, freqs)
             + scat * physics.pow_frac(scat_temp, temp, freqs)
         )
 
-    # @Function
     @staticmethod
     def efficiency(refl, abso, spil, scat):
-        """Compute the transmission for this element"""
+        """Compute the transmission for this element."""
         return (1 - refl) * (1 - abso) * (1 - spil) * (1 - scat)
 
     def calculate(self, freqs):
-        """Compute the results for the frequencies of interest for a given channel"""
+        """Compute the results for the frequencies of interest for a given channel."""
         emiss_shape = np.broadcast(
             freqs,
             self.abso,
@@ -70,38 +66,41 @@ class ChannelResults:
         ).reshape(effic_shape)
 
     def __call__(self):
-        """Return key parameters"""
+        """Return key parameters."""
         return (self.effic, self.emiss, self.temp)
 
 
-class OpticalElement(Model):
-    """Model for a single optical element"""
+class OpticalElement(BaseModel):
+    """Model for a single optical element."""
 
-    temperature = Variable(required=True)
-    spillover_temp = Variable(unit="K")
-    scatter_temp = Variable(unit="K")
-    surface_rough = Variable()
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-    absorption = Variable(required=True)
-    reflection = Variable(required=True)
-    spillover = Variable(required=True)
-    scatter_frac = Variable(required=True)
+    temperature: Var() = None
+    spillover_temp: Var("K") = None
+    scatter_temp: Var("K") = None
+    surface_rough: Var() = None
 
-    def __init__(self, **kwargs):
-        """Constructor"""
-        super().__init__(**kwargs)
-        self.elem_name = None
-        self.results = dict()
+    absorption: Var() = None
+    reflection: Var() = None
+    spillover: Var() = None
+    scatter_frac: Var() = None
+
+    elem_name: str | None = None
+    results: dict = {}
+
+    def model_post_init(self, __context):
+        # Ensure each instance gets its own results dict
+        object.__setattr__(self, "results", {})
 
     def unsample(self):
-        """Clear out the samples parameters"""
+        """Clear out the sampled parameters."""
         self.temperature.unsample()
         self.reflection.unsample()
         self.spillover.unsample()
         self.scatter_frac.unsample()
 
     def sample(self, freqs, nsample, chan_idx):
-        """Sample input parameters for a given channel"""
+        """Sample input parameters for a given channel."""
         self.temperature.sample(nsample)
         results_ = ChannelResults()
         results_.temp = self.temperature.SI
@@ -126,7 +125,7 @@ class OpticalElement(Model):
         return results_
 
     def compute_channel(self, channel, freqs, nsample):
-        """Compute the results for the frequencies of interest for a given channel"""
+        """Compute the results for the frequencies of interest for a given channel."""
         self.unsample()
         results_ = self.sample(freqs, nsample, channel.idx)
         results_.abso = self.calc_abso(channel, freqs, nsample)
@@ -134,31 +133,29 @@ class OpticalElement(Model):
         return results_()
 
     def calc_abso(self, channel, freqs, nsample):
-        """Compute the absorption for a given channel"""
+        """Compute the absorption for a given channel."""
         return self.absorption.sample(nsample, freqs, channel.idx)
 
 
 class Mirror(OpticalElement):
-    """OpticalElement sub-class for mirrors"""
+    """OpticalElement sub-class for mirrors."""
 
-    conductivity = Variable()
+    conductivity: Var() = None
 
     def calc_abso(self, channel, freqs, nsample):
-        """Compute the absorption for a given channel"""
         if is_not_none(self.conductivity) and np.isfinite(self.conductivity.SI).all():
             return 1.0 - physics.ohmic_eff(freqs, self.conductivity.SI)
         return super().calc_abso(channel, freqs, nsample)
 
 
 class Dielectric(OpticalElement):
-    """OpticalElement sub-class for dielectrics"""
+    """OpticalElement sub-class for dielectrics."""
 
-    thickness = Variable()
-    index = Variable()
-    loss_tangent = Variable()
+    thickness: Var() = None
+    index: Var() = None
+    loss_tangent: Var() = None
 
     def calc_abso(self, channel, freqs, nsample):
-        """Compute the absorption for a given channel"""
         if (
             is_not_none(self.thickness)
             and is_not_none(self.index)
@@ -171,10 +168,9 @@ class Dielectric(OpticalElement):
 
 
 class ApertureStop(OpticalElement):
-    """OpticalElement sub-class for apertures"""
+    """OpticalElement sub-class for apertures."""
 
     def calc_abso(self, channel, freqs, nsample):
-        """Compute the absorption for a given channel"""
         pixel_size = channel.pixel_size()
         f_number = channel.camera.f_number()
         waist_factor = channel.waist_factor()
@@ -190,44 +186,46 @@ class ApertureStop(OpticalElement):
         return super().calc_abso(channel, freqs, nsample)
 
 
-class Optics_Base(Model):
-    """Base class for optical chains"""
+class Optics_Base(BaseModel):
+    """Base class for optical chains."""
 
-    def __init__(self, **kwargs):
-        """Constructor"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-        super().__init__(**kwargs)
-        self.elements = odict()
-        self.mirrors = odict()
-        self.dielectics = odict()
-        self.apertureStops = odict()
+    def model_post_init(self, __context):
+        elements = odict()
+        mirrors = odict()
+        dielectics = odict()
+        apertureStops = odict()
         for key, val in self.__dict__.items():
             if isinstance(val, OpticalElement):
                 val.elem_name = key
-                self.elements[key] = val
+                elements[key] = val
             if isinstance(val, Mirror):
-                self.mirrors[key] = val
+                mirrors[key] = val
             if isinstance(val, Dielectric):
-                self.dielectics[key] = val
+                dielectics[key] = val
             if isinstance(val, ApertureStop):
-                self.apertureStops[key] = val
+                apertureStops[key] = val
+        object.__setattr__(self, "elements", elements)
+        object.__setattr__(self, "mirrors", mirrors)
+        object.__setattr__(self, "dielectics", dielectics)
+        object.__setattr__(self, "apertureStops", apertureStops)
 
 
 def build_optics_class(name="Optics", **kwargs):
-    """Build a class that consists of a set of OpticalElements
+    """Build a class that consists of a set of OpticalElements.
 
-    Parameter
-    ---------
-    name : `str`
+    Parameters
+    ----------
+    name : str
         The name of the new class
-    kwargs : Heirachical dictionary used to build elements
-
+    kwargs : dict
+        Hierarchical dictionary used to build elements
 
     Returns
     -------
-    optics_class : `type`
-        The new class, which has all the requested properties
-
+    object
+        Instance of the new class with all requested optical elements
     """
     type_dict = {
         None: OpticalElement,
@@ -235,4 +233,18 @@ def build_optics_class(name="Optics", **kwargs):
         "Dielectric": Dielectric,
         "ApertureStop": ApertureStop,
     }
-    return build_class(name, (Optics_Base,), [kwargs], [type_dict])
+    return _build_model(name, Optics_Base, [kwargs], [type_dict])
+
+
+def _build_model(name, base_class, config_dicts, type_dicts, **kwargs):
+    """Build a pydantic model class dynamically and return an instance."""
+    kwcopy = kwargs.copy()
+    field_definitions = {}
+    for config_dict, type_dict in zip(config_dicts, type_dicts):
+        expanded = expand_dict(config_dict)
+        kwcopy.update(expanded)
+        for field_name, field_config in expanded.items():
+            cls = type_dict[field_config.pop("obj_type", None)]
+            field_definitions[field_name] = (cls | None, None)
+    new_class = create_model(name, __base__=base_class, **field_definitions)
+    return new_class(**kwcopy)

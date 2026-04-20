@@ -3,9 +3,8 @@ Interpolates quantities vs frequency
 """
 
 import numpy as np
-from cfgmdl.utils import is_none
 
-from .utils import read_txt_to_np
+from .utils import is_none, read_txt_to_np
 
 
 class FreqInterp:
