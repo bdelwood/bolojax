@@ -1,8 +1,9 @@
-"""Computations for noise estimation"""
+"""Computations for noise estimation."""
 
 import os
 import pickle as pk
 
+import jax.numpy as jnp
 import numpy as np
 
 from . import physics
@@ -10,7 +11,7 @@ from . import physics
 
 def Flink(n, Tb, Tc):
     """
-    Link factor for the bolo to the bath
+    Link factor for the bolo to the bath.
 
     Args:
     n (float): thermal carrier index
@@ -26,7 +27,7 @@ def Flink(n, Tb, Tc):
 
 def G(psat, n, Tb, Tc):
     """
-    Thermal conduction between the bolo and the bath
+    Thermal conduction between the bolo and the bath.
 
     Args:
     psat (float): saturation power [W]
@@ -39,20 +40,20 @@ def G(psat, n, Tb, Tc):
 
 def calc_photon_NEP(popts, freqs, factors=None):
     """
-    Calculate photon NEP [W/rtHz] for a detector
+    Calculate photon NEP [W/rtHz] for a detector.
 
     Args:
     popts (list): power from elements in the optical elements [W]
     freqs (list): frequencies of observation [Hz]
     """
-    popt = np.sum(popts, axis=0)
-    # popt = sum([x for x in popts])
-    # Don't consider correlations
+    popt = jnp.sum(popts, axis=0)
+    # No correlations
     if factors is None:
         popt2 = popt * popt
-        nep = np.sqrt(np.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
-        neparr = nep
-        return nep, neparr
+        nep = jnp.sqrt(
+            jnp.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs)
+        )
+        return nep, nep
 
     popt2 = sum(
         [popts[i] * popts[j] for i in range(len(popts)) for j in range(len(popts))]
@@ -64,52 +65,56 @@ def calc_photon_NEP(popts, freqs, factors=None):
             for j in range(len(popts))
         ]
     )
-    nep = np.sqrt(np.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
-    neparr = np.sqrt(np.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2arr), freqs))
+    nep = jnp.sqrt(jnp.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2), freqs))
+    neparr = jnp.sqrt(
+        jnp.trapezoid((2.0 * physics.h * freqs * popt + 2.0 * popt2arr), freqs)
+    )
 
     return nep, neparr
 
 
 def bolo_NEP(flink, G_val, Tc):
     """
-    Thremal carrier NEP [W/rtHz]
+    Thermal carrier NEP [W/rtHz].
 
     Args:
     flink (float): link factor to the bolo bath
     G (float): thermal conduction between the bolo and the bath [W/K]
     Tc (float): bolo transition temperature [K]
     """
-    return np.sqrt(4 * physics.kB * flink * (Tc**2) * G_val)
+    return jnp.sqrt(4 * physics.kB * flink * (Tc**2) * G_val)
 
 
 def read_NEP(pelec, boloR, nei, sfact=1.0):
     """
-    Readout NEP [W/rtHz] for a voltage-biased bolo
+    Readout NEP [W/rtHz] for a voltage-biased bolo.
 
     Args:
     pelec (float): bias power [W]
     boloR (float): bolometer resistance [Ohms]
     nei (float): noise equivalent current [A/rtHz]
     """
-    responsivity = sfact / np.sqrt(boloR * pelec)
+    responsivity = sfact / jnp.sqrt(boloR * pelec)
     return nei / responsivity
 
 
 def dPdT(eff, freqs):
     """
-    Change in power on the detector with change in CMB temperature [W/K]
+    Change in power on the detector with change in CMB temperature [W/K].
 
     Args:
     eff (float): detector efficiency
     freqs (float): observation frequencies [Hz]
     """
-    temp = np.array([physics.Tcmb for f in freqs])
-    return np.trapezoid(physics.ani_pow_spec(np.array(freqs), temp, np.array(eff)), freqs)
+    temp = jnp.full_like(freqs, physics.Tcmb)
+    return jnp.trapezoid(
+        physics.ani_pow_spec(jnp.asarray(freqs), temp, jnp.asarray(eff)), freqs
+    )
 
 
 def NET_from_NEP(nep, freqs, sky_eff, opt_coup=1.0):
     """
-    NET [K-rts] from NEP
+    NET [K-rts] from NEP.
 
     Args:
     nep (float): NEP [W/rtHz]
@@ -118,38 +123,43 @@ def NET_from_NEP(nep, freqs, sky_eff, opt_coup=1.0):
     opt_coup (float): optical coupling to the detector. Default to 1.
     """
     dpdt = opt_coup * dPdT(sky_eff, freqs)
-    return nep / (np.sqrt(2.0) * dpdt)
+    return nep / (jnp.sqrt(2.0) * dpdt)
 
 
 def NET_arr(net, n_det, det_yield=1.0):
     """
-    Array NET [K-rts] from NET per detector and num of detectors
+    Array NET [K-rts] from NET per detector and num of detectors.
 
     Args:
     net (float): NET per detector
     n_det (int): number of detectors
     det_yield (float): detector yield. Defaults to 1.
     """
-    return net / (np.sqrt(n_det * det_yield))
+    return net / (jnp.sqrt(n_det * det_yield))
 
 
 def map_depth(net_arr, fsky, tobs, obs_eff):
     """
-    Sensitivity [K-arcmin] given array NET
+    Sensitivity [K-arcmin] given array NET.
 
-    Arg:
+    Args:
     net_arr (float): array NET [K-rts]
     fsky (float): sky fraction
     tobs (float): observation time [s]
     """
-    return np.sqrt(
-        (4.0 * physics.PI * fsky * 2.0 * np.power(net_arr, 2.0)) / (tobs * obs_eff)
+    return jnp.sqrt(
+        (4.0 * physics.PI * fsky * 2.0 * jnp.power(net_arr, 2.0)) / (tobs * obs_eff)
     ) * (10800.0 / physics.PI)
 
 
 class Noise:  # pylint: disable=too-many-instance-attributes
     """
-    Noise object calculates NEP, NET, mapping speed, and sensitivity
+    Noise object calculates NEP, NET, mapping speed, and sensitivity.
+
+    Loads pre-computed Bose white-noise correlation factors from pickle
+    files (originally computed by Charlie Hill for BoloCalc,
+    arXiv:1806.04316) and uses them to calculate pixel-to-pixel photon
+    noise correlations.
 
     Args:
     phys (src.Physics): parent Physics object
@@ -159,8 +169,6 @@ class Noise:  # pylint: disable=too-many-instance-attributes
     """
 
     def __init__(self):
-        """Constructor"""
-
         # Aperture stop names
         self._ap_names = ["APERT", "STOP", "LYOT"]
 
@@ -181,11 +189,11 @@ class Noise:  # pylint: disable=too-many-instance-attributes
         # Detector pitch array
         self._det_p = self._p_c_apert
         # Geometric pitch factor
-        self._geo_fact = 6  # Hex packing;  6 for temperature.  More complicated for polarization, not a simple factor.
+        self._geo_fact = 6  # Hex packing; 6 for temperature. More complicated for polarization, not a simple factor.
 
     def corr_facts(self, elems, det_pitch, ap_names, flamb_max=3.0):
         """
-        Calculate the Bose white-noise correlation factor
+        Calculate the Bose white-noise correlation factor.
 
         Args:
         elems (list): optical elements in the camera
@@ -213,11 +221,10 @@ class Noise:  # pylint: disable=too-many-instance-attributes
             if "CMB" in elem_.upper():
                 use_abs = abs(self._c_apert)
             elif elem_ in ap_names:
-                # use_abs = abs(self._i_stop)    # Original BoloCalc uses c_apert and c_stop in place of i_apert and i_stop
+                # Original BoloCalc uses c_apert and c_stop in place of i_apert and i_stop
                 use_abs = abs(self._c_stop)
                 at_det = True
             else:
-                # use_abs = abs(self._i_apert)
                 use_abs = abs(self._c_apert)
             factors.append(
                 np.sqrt(1.0 + self._geo_fact * (np.sum([use_abs[ind] for ind in inds])))
@@ -227,7 +234,7 @@ class Noise:  # pylint: disable=too-many-instance-attributes
 
     def photon_NEP(self, popts, freqs, **kwargs):
         """
-        Calculate photon NEP [W/rtHz] for a detector
+        Calculate photon NEP [W/rtHz] for a detector.
 
         Args:
         popts (list): power from elements in the optical elements [W]
@@ -235,8 +242,6 @@ class Noise:  # pylint: disable=too-many-instance-attributes
         elems (list): optical elements
         det_pitch (float): detector pitch in f-lambda units. Default is None.
         """
-        # popt = sum([x for x in popts])
-        # Don't consider correlations
         elems = kwargs.get("elems")
         det_pitch = kwargs.get("det_pitch")
         ap_names = kwargs.get("ap_names")

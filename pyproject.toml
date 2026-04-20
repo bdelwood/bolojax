@@ -12,13 +12,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-    "numpy>=1.24",
+    "numpy>=2",
     "scipy",
     "h5py",
     "astropy",
     "pyyaml",
     "pydantic>=2.7",
+    "jax[cpu]",
 ]
+
+[project.optional-dependencies]
+gpu = ["jax[cuda12]"]
 
 [project.scripts]
 bolojax = "bolojax.cli:main"

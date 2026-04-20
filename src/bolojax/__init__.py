@@ -1,5 +1,9 @@
 """Bolometric sensitivity calculator for CMB instruments."""
 
+import jax
+
+jax.config.update("jax_enable_x64", True)
+
 from bolojax._version import __version__
 
 from . import noise, physics, unit, utils
