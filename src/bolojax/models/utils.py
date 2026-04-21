@@ -10,14 +10,14 @@ CONFIG_DIR = None
 
 def is_none(val):
     """Check for values equivalent to None (None, 'none', 'None')."""
-    if not isinstance(val, (type(None), str)):
+    if not isinstance(val, type(None) | str):
         return False
     return val in [None, "none", "None"]
 
 
 def is_not_none(val):
     """Check for values NOT equivalent to None."""
-    if not isinstance(val, (type(None), str)):
+    if not isinstance(val, type(None) | str):
         return True
     return val not in [None, "none", "None"]
 
@@ -62,7 +62,7 @@ def copy_dict(in_dict, def_dict):
     Returns
     -------
     outdict : `dict`
-        Dictionary with arguments selected from in_dict to overide def_dict
+        Dictionary with arguments selected from in_dict to override def_dict
     """
     return {key: in_dict.get(key, val) for key, val in def_dict.items()}
 
@@ -168,9 +168,7 @@ def read_txt_to_np(fname):
     else:
         msg = f"File {fname} is not csv or txt"
         raise ValueError(msg)
-    return np.loadtxt(
-        str(Path(fname)), unpack=True, dtype=np.float64, delimiter=delim
-    )
+    return np.loadtxt(str(Path(fname)), unpack=True, dtype=np.float64, delimiter=delim)
 
 
 def reshape_array(val, shape):

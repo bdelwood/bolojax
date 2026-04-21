@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from .params import Var
+from bolojax.models.params import Var
 
 
 class Readout(BaseModel):

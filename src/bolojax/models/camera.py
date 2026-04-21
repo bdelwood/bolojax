@@ -9,10 +9,9 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from bolojax.compute.noise import Noise
-
-from .channel import Channel
-from .params import Var
-from .utils import is_not_none
+from bolojax.models.channel import Channel
+from bolojax.models.params import Var
+from bolojax.models.utils import is_not_none
 
 
 class Camera(BaseModel):

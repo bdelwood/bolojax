@@ -4,14 +4,14 @@ Interpolates quantities vs frequency
 
 import numpy as np
 
-from .utils import is_none, read_txt_to_np
+from bolojax.models.utils import is_none, read_txt_to_np
 
 _rng = np.random.default_rng()
 
 
 class FreqInterp:
     """
-    Interpolates quantities vs frequency, with errrors
+    Interpolates quantities vs frequency, with errors
     for detectors and optics
     """
 

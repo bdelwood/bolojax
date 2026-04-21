@@ -8,10 +8,9 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from bolojax.compute import noise, physics
-
-from .params import Var
-from .sky import Universe
-from .utils import is_not_none
+from bolojax.models.params import Var
+from bolojax.models.sky import Universe
+from bolojax.models.utils import is_not_none
 
 
 class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
@@ -204,7 +203,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         )
 
     def compute_evaluation_freqs(self, freq_resol=None):
-        """Compute and return the evaluation frequecies."""
+        """Compute and return the evaluation frequencies."""
         self.bandwidth = self.band_center.SI * self.fractional_bandwidth.SI
         if freq_resol is None:
             freq_resol = 0.05 * self.bandwidth

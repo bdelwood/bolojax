@@ -3,8 +3,8 @@
 import jax.numpy as jnp
 import numpy as np
 
-from . import physics
-from .beam_correlation import compute_corr_curves
+from bolojax.compute import physics
+from bolojax.compute.beam_correlation import compute_corr_curves
 
 
 def Flink(n, Tb, Tc):
@@ -37,8 +37,8 @@ def G(psat, n, Tb, Tc):
 
 
 def calc_photon_NEP(popts, freqs, factors=None):
-    """
-    Calculate photon NEP [W/rtHz] for a detector.
+    r"""
+    Calculate photon NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a detector.
 
     Args:
     popts (list): power from elements in the optical elements [W]
@@ -72,8 +72,8 @@ def calc_photon_NEP(popts, freqs, factors=None):
 
 
 def bolo_NEP(flink, G_val, Tc):
-    """
-    Thermal carrier NEP [W/rtHz].
+    r"""
+    Thermal carrier NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$.
 
     Args:
     flink (float): link factor to the bolo bath
@@ -84,13 +84,13 @@ def bolo_NEP(flink, G_val, Tc):
 
 
 def read_NEP(pelec, boloR, nei, sfact=1.0):
-    """
-    Readout NEP [W/rtHz] for a voltage-biased bolo.
+    r"""
+    Readout NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a voltage-biased bolo.
 
     Args:
     pelec (float): bias power [W]
     boloR (float): bolometer resistance [Ohms]
-    nei (float): noise equivalent current [A/rtHz]
+    nei (float): noise equivalent current $[\mathrm{A}/\sqrt{\mathrm{Hz}}]$
     """
     responsivity = sfact / jnp.sqrt(boloR * pelec)
     return nei / responsivity
@@ -111,11 +111,11 @@ def dPdT(eff, freqs):
 
 
 def NET_from_NEP(nep, freqs, sky_eff, opt_coup=1.0):
-    """
-    NET [K-rts] from NEP.
+    r"""
+    NET $[\mathrm{K}\sqrt{\mathrm{s}}]$ from NEP.
 
     Args:
-    nep (float): NEP [W/rtHz]
+    nep (float): NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$
     freqs (list): observation frequencies [Hz]
     sky_eff (float): efficiency between the detector and the sky
     opt_coup (float): optical coupling to the detector. Default to 1.
@@ -125,8 +125,8 @@ def NET_from_NEP(nep, freqs, sky_eff, opt_coup=1.0):
 
 
 def NET_arr(net, n_det, det_yield=1.0):
-    """
-    Array NET [K-rts] from NET per detector and num of detectors.
+    r"""
+    Array NET $[\mathrm{K}\sqrt{\mathrm{s}}]$ from NET per detector and num of detectors.
 
     Args:
     net (float): NET per detector
@@ -137,11 +137,11 @@ def NET_arr(net, n_det, det_yield=1.0):
 
 
 def map_depth(net_arr, fsky, tobs, obs_eff):
-    """
+    r"""
     Sensitivity [K-arcmin] given array NET.
 
     Args:
-    net_arr (float): array NET [K-rts]
+    net_arr (float): array NET $[\mathrm{K}\sqrt{\mathrm{s}}]$
     fsky (float): sky fraction
     tobs (float): observation time [s]
     """
@@ -151,14 +151,13 @@ def map_depth(net_arr, fsky, tobs, obs_eff):
 
 
 class Noise:  # pylint: disable=too-many-instance-attributes
-    """
-    Noise object calculates NEP, NET, mapping speed, and sensitivity.
+    r"""Noise object calculates NEP, NET, mapping speed, and sensitivity.
 
     Computes Bose white-noise correlation factors following Hill & Kusaka,
     Appl. Opt. 63, 1654 (2024), arXiv:2309.01153.  The corr_facts method
     evaluates the array-averaged HBT coefficient (Eq. 67) which enters the
-    array noise variance as a (1 + gamma^(2)) multiplier on the wave noise
-    term (Eq. 68).
+    array noise variance as a $(1 + \gamma^{(2)})$ multiplier on the wave
+    noise term (Eq. 68).
 
     Args:
         beam_preset: name of a beam correlation preset ("bolocalc",
@@ -171,7 +170,6 @@ class Noise:  # pylint: disable=too-many-instance-attributes
     _c_stop: np.ndarray
 
     def __init__(self, beam_preset="bolocalc"):
-
         # Aperture stop names
         self._ap_names = ["APERT", "STOP", "LYOT"]
 
@@ -185,12 +183,12 @@ class Noise:  # pylint: disable=too-many-instance-attributes
         self._geo_fact = 6  # Hex packing; 6 for temperature. More complicated for polarization, not a simple factor.
 
     def corr_facts(self, elems, det_pitch, ap_names, flamb_max=3.0):
-        """
+        r"""
         Calculate the Bose white-noise correlation factor.
 
         Args:
         elems (list): optical elements in the camera
-        det_pitch (float): detector pitch in f-lambda units
+        det_pitch (float): detector pitch in $F\lambda$ units
         flamb_max (float): the maximum detector pitch distance
         for which to calculate the correlation factor.
         Default is 3.
@@ -226,14 +224,14 @@ class Noise:  # pylint: disable=too-many-instance-attributes
         return np.array(factors)
 
     def photon_NEP(self, popts, freqs, **kwargs):
-        """
-        Calculate photon NEP [W/rtHz] for a detector.
+        r"""
+        Calculate photon NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a detector.
 
         Args:
         popts (list): power from elements in the optical elements [W]
         freqs (list): frequencies of observation [Hz]
         elems (list): optical elements
-        det_pitch (float): detector pitch in f-lambda units. Default is None.
+        det_pitch (float): detector pitch in $F\lambda$ units. Default is None.
         """
         elems = kwargs.get("elems")
         det_pitch = kwargs.get("det_pitch")

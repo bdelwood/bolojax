@@ -11,11 +11,10 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from bolojax.io.sensitivity import Sensitivity
 from bolojax.io.tables import TableDict
-
-from .camera import build_cameras
-from .optics import build_optics
-from .params import Var
-from .readout import Readout
+from bolojax.models.camera import build_cameras
+from bolojax.models.optics import build_optics
+from bolojax.models.params import Var
+from bolojax.models.readout import Readout
 
 
 class Instrument(BaseModel):

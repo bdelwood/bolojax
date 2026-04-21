@@ -15,10 +15,10 @@ import scipy.stats as sps
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
-from .interp import FreqInterp
-from .pdf import ChoiceDist
-from .unit import Unit
-from .utils import cfg_path, is_none
+from bolojax.models.interp import FreqInterp
+from bolojax.models.pdf import ChoiceDist
+from bolojax.models.unit import Unit
+from bolojax.models.utils import cfg_path, is_none
 
 
 class ParamHolder:
@@ -34,7 +34,7 @@ class ParamHolder:
         self.scale = np.asarray(kwargs.get("scale", 1.0), dtype=float)
         self.free = np.asarray(kwargs.get("free", False), dtype=bool)
         unit = kwargs.get("unit")
-        if isinstance(unit, (str, int, float)):
+        if isinstance(unit, str | int | float):
             unit = Unit(unit)
         self.unit = unit
 
@@ -105,7 +105,9 @@ class VariableHolder(ParamHolder):
                 [
                     sps.norm(loc=val_, scale=sca_)
                     for val_, sca_ in zip(
-                        np.atleast_1d(self.value), np.atleast_1d(self.errors), strict=False
+                        np.atleast_1d(self.value),
+                        np.atleast_1d(self.errors),
+                        strict=False,
                     )
                 ]
             )

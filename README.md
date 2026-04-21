@@ -2,55 +2,68 @@
 
 <!-- readme-include-start -->
 
-[![CI status][ci-img]][ci-url]
-[![Documentation][doc-img]][doc-url]
-[![PyPI version][pypi-img]][pypi-url]
-[![Python][python-img]][pypi-url]
+[![CI status][ci-img]][ci-url] [![Documentation][doc-img]][doc-url]
+[![PyPI version][pypi-img]][pypi-url] [![Python][python-img]][pypi-url]
 [![License][license-img]][license-url]
 
-[ci-img]: https://img.shields.io/github/actions/workflow/status/bdelwood/bolojax/ci.yaml?branch=master&style=flat-square&label=CI
+[ci-img]:
+  https://img.shields.io/github/actions/workflow/status/bdelwood/bolojax/ci.yaml?branch=master&style=flat-square&label=CI
 [ci-url]: https://github.com/bdelwood/bolojax/actions/workflows/ci.yaml
 [doc-img]: https://img.shields.io/badge/docs-bolojax-4d76ae?style=flat-square
 [doc-url]: https://bdelwood.github.io/bolojax/
 [pypi-img]: https://img.shields.io/pypi/v/bolojax?style=flat-square
 [python-img]: https://img.shields.io/pypi/pyversions/bolojax?style=flat-square
 [pypi-url]: https://pypi.org/project/bolojax/
-[license-img]: https://img.shields.io/badge/license-BSD--3--Clause-yellow?style=flat-square
+[license-img]:
+  https://img.shields.io/badge/license-BSD--3--Clause-yellow?style=flat-square
 [license-url]: https://github.com/bdelwood/bolojax/blob/master/LICENSE
 
-Bolometric sensitivity calculator for CMB instruments, built on [JAX](https://github.com/jax-ml/jax).
+Bolometric sensitivity calculator for CMB instruments, built on
+[JAX](https://github.com/jax-ml/jax).
 
-bolojax models the full radiative transfer chain of a CMB telescope and computes noise-equivalent temperature (NET), noise-equivalent power (NEP), and mapping speed. Because the compute path is written in pure JAX, the entire forward model is automatically differentiable, enabling gradient-based fitting, Fisher forecasting, MCMC sampling, and potentially inverse design.
+bolojax models the full radiative transfer chain of a CMB telescope and computes
+noise-equivalent temperature (NET), noise-equivalent power (NEP), and mapping
+speed. Because the compute path is written in pure JAX, the entire forward model
+is automatically differentiable, enabling gradient-based fitting, Fisher
+forecasting, MCMC sampling, and potentially inverse design.
 
 ## History
 
-This package descends from [BoloCalc](https://github.com/chill90/BoloCalc) by Charlie Hill ([arXiv:1806.04316](https://arxiv.org/abs/1806.04316)), which was subsequently forked and restructured by Eric Charles at [KIPAC/bolo-calc](https://github.com/KIPAC/bolo-calc). bolojax is a fork of bolo-calc that replaces the configuration layer with [pydantic](https://docs.pydantic.dev/) and the numerical backend with JAX and [equinox](https://docs.kidger.site/equinox/), making the sensitivity calculation JIT-compiled and fully differentiable.
+This package descends from [BoloCalc](https://github.com/chill90/BoloCalc) by
+Charlie Hill ([arXiv:1806.04316](https://arxiv.org/abs/1806.04316)), which was
+subsequently forked and restructured by Eric Charles at
+[KIPAC/bolo-calc](https://github.com/KIPAC/bolo-calc). bolojax is a fork of
+bolo-calc that replaces the configuration layer with
+[pydantic](https://docs.pydantic.dev/) and the numerical backend with JAX and
+[equinox](https://docs.kidger.site/equinox/), making the sensitivity calculation
+JIT-compiled and fully differentiable.
 
 ## What you can do
 
-| Task | Before (BoloCalc / bolo-calc) | With bolojax |
-|---|---|---|
-| **Forward modeling** | Supported (YAML config only) | Supported, JIT-compiled |
-| **Monte Carlo (posterior predictive)** | Supported (sample parameters, run many realizations) | Supported, faster with JIT |
-| **Least-squares fitting** | Possible, but the config-file-only interface meant wrapping the entire pipeline as a subprocess and perturbing parameters via text file manipulation; Jacobians computed by finite differences | Programmatic API exposes JAX pytrees directly; exact Jacobians through autodiff |
-| **Fisher analysis** | Possible in principle, but Jacobian accuracy limited by finite-difference step size and subprocess overhead made each evaluation expensive | Exact Fisher matrix from autodiff in a single JIT-compiled pass |
-| **MCMC / HMC** | Not practical, as one could not utilize gradient-based samplers. | Enabled by autodiff |
+| Task                                   | Before (BoloCalc / bolo-calc)                                                                                                                                                                  | With bolojax                                                                    |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Forward modeling**                   | Supported (YAML config only)                                                                                                                                                                   | Supported, JIT-compiled                                                         |
+| **Monte Carlo (posterior predictive)** | Supported (sample parameters, run many realizations)                                                                                                                                           | Supported, faster with JIT                                                      |
+| **Least-squares fitting**              | Possible, but the config-file-only interface meant wrapping the entire pipeline as a subprocess and perturbing parameters via text file manipulation; Jacobians computed by finite differences | Programmatic API exposes JAX pytrees directly; exact Jacobians through autodiff |
+| **Fisher analysis**                    | Possible in principle, but Jacobian accuracy limited by finite-difference step size and subprocess overhead made each evaluation expensive                                                     | Exact Fisher matrix from autodiff in a single JIT-compiled pass                 |
+| **MCMC / HMC**                         | Not practical, as one could not utilize gradient-based samplers.                                                                                                                               | Enabled by autodiff                                                             |
 
 ## Installation
 
-```bash 
+```bash
 uv pip install "git+https://github.com/bdelwood/bolojax.git"
 ```
 
 For GPU support:
 
 ```bash
- uv pip install "bolojax[gpu] @ git+https://github.com/bdelwood/bolojax.git" 
+ uv pip install "bolojax[gpu] @ git+https://github.com/bdelwood/bolojax.git"
 ```
 
 ## Model structure
 
-An `Experiment` is the top-level container. It holds a `Universe` (sky model), an `Instrument` (telescope hardware), and a `SimConfig` (simulation settings):
+An `Experiment` is the top-level container. It holds a `Universe` (sky model),
+an `Instrument` (telescope hardware), and a `SimConfig` (simulation settings):
 
 ```
 Experiment
@@ -71,10 +84,16 @@ Experiment
 
 The sensitivity calculation proceeds in two stages:
 
-1. **Setup** (Python/numpy): sample sky and detector parameters, evaluate the optical chain, populate frequency-dependent temperatures, transmissions, and emissivities.
-2. **Compute** (JAX): `compute_sensitivity(OpticsState, BoloParams) -> SensitivityResult` runs the full radiative transfer, noise estimation, and NET calculation as a single JIT-compiled, differentiable function.
+1. **Setup** (Python/numpy): sample sky and detector parameters, evaluate the
+   optical chain, populate frequency-dependent temperatures, transmissions, and
+   emissivities.
+2. **Compute** (JAX):
+   `compute_sensitivity(OpticsState, BoloParams) -> SensitivityResult` runs the
+   full radiative transfer, noise estimation, and NET calculation as a single
+   JIT-compiled, differentiable function.
 
-`build_params(channel)` bridges the two stages, extracting JAX pytrees from a configured `Channel`.
+`build_params(channel)` bridges the two stages, extracting JAX pytrees from a
+configured `Channel`.
 
 ## Quick start
 
@@ -137,4 +156,5 @@ new_results = bolojax.compute_sensitivity(optics, new_params)
 
 ## License
 
-BSD 3-Clause. See [LICENSE](https://github.com/bdelwood/bolojax/blob/master/LICENSE) for details.
+BSD 3-Clause. See
+[LICENSE](https://github.com/bdelwood/bolojax/blob/master/LICENSE) for details.

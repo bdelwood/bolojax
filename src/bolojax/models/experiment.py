@@ -5,9 +5,9 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from .instrument import Instrument
-from .sky import Universe
-from .utils import set_config_dir
+from bolojax.models.instrument import Instrument
+from bolojax.models.sky import Universe
+from bolojax.models.utils import set_config_dir
 
 
 class SimConfig(BaseModel):

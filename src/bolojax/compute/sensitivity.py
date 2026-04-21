@@ -15,7 +15,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from . import noise, physics
+from bolojax.compute import noise, physics
 
 NSKY_SRC = 4
 

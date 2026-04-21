@@ -9,9 +9,8 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from bolojax.compute import physics
-
-from .params import Var
-from .utils import is_not_none
+from bolojax.models.params import Var
+from bolojax.models.utils import is_not_none
 
 
 class ChannelResults:
@@ -233,7 +232,7 @@ def build_optics(config: dict[str, Any]) -> Optics:
     apertureStops = OrderedDict()
 
     for item in elem_list:
-        (name, props), = item.items()
+        ((name, props),) = item.items()
         cfg = {**defaults, **(props or {})}
         obj_type = cfg.pop("obj_type", None)
         cls = _ELEMENT_TYPES[obj_type]

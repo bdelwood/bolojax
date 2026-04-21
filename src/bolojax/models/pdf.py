@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .utils import read_txt_to_np
+from bolojax.models.utils import read_txt_to_np
 
 _rng = np.random.default_rng()
 
@@ -43,7 +43,7 @@ class ChoiceDist:
     # ***** Public Methods *****
     def rvs(self, nsample=1):
         """
-        Samle the distribution nsample times
+        Sample the distribution nsample times
 
         Args:
         nsample (int): the number of times to sample the distribution

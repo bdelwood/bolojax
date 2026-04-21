@@ -8,13 +8,15 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar
 
+import am
 import numpy as np
+import xarray as xr
+from joblib import Memory
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from bolojax.compute import physics
-
-from .params import Var
-from .utils import cfg_path, is_not_none
+from bolojax.models.params import Var
+from bolojax.models.utils import cfg_path, is_not_none
 
 GHz_to_Hz = 1.0e09
 
@@ -81,13 +83,12 @@ def _compute_am_grid(path, amc_args, profile_pwv_mm, pwv_mm, elevation):
     Module-level function for ``joblib.Memory`` caching.
     Returns ``(freq_ghz, tb, tx)`` with shapes ``(n_pwv, n_elev, n_freq)``.
     """
-    import am  # noqa: PLC0415
-    import xarray as xr  # noqa: PLC0415
-
-    params = xr.Dataset(coords={
-        "pwv_mm": np.array(pwv_mm, dtype=float),
-        "elevation": np.array(elevation, dtype=float),
-    })
+    params = xr.Dataset(
+        coords={
+            "pwv_mm": np.array(pwv_mm, dtype=float),
+            "elevation": np.array(elevation, dtype=float),
+        }
+    )
 
     def args_fn(pwv_mm, elevation):
         subs = {
@@ -137,8 +138,6 @@ class AmAtm(AtmBackend):
         self.pwv_mm = pwv_mm
         self.elevation = elevation
 
-        from joblib import Memory  # noqa: PLC0415
-
         cache = Path(cache_dir) if cache_dir else Path(path).parent / ".bolojax_cache"
         self._compute = Memory(cache, verbose=0).cache(_compute_am_grid)
         self._freq_ghz = None
@@ -156,19 +155,28 @@ class AmAtm(AtmBackend):
             self.pwv_mm = _make_grid(np.atleast_1d(pwv_m) * 1e3, pwv_step_mm)
         if self.elevation is None:
             if elevation is None:
-                msg = "elevation grid not configured and no sampled values to infer from"
+                msg = (
+                    "elevation grid not configured and no sampled values to infer from"
+                )
                 raise ValueError(msg)
             self.elevation = _make_grid(np.atleast_1d(elevation), elev_step)
         self._freq_ghz, self._tb_grid, self._tx_grid = self._compute(
-            self.path, self.amc_args, self.profile_pwv_mm,
-            self.pwv_mm, self.elevation,
+            self.path,
+            self.amc_args,
+            self.profile_pwv_mm,
+            self.pwv_mm,
+            self.elevation,
         )
 
     def raw_spectra(self, freqs, pwv, elevation):  # noqa: ARG002
         """Look up nearest grid point. *pwv* is in meters (SI)."""
         i_pwv = np.argmin(np.abs(np.array(self.pwv_mm) - pwv * 1e3))
         i_elev = np.argmin(np.abs(np.array(self.elevation) - elevation))
-        return self._freq_ghz, self._tb_grid[i_pwv, i_elev], self._tx_grid[i_pwv, i_elev]
+        return (
+            self._freq_ghz,
+            self._tb_grid[i_pwv, i_elev],
+            self._tx_grid[i_pwv, i_elev],
+        )
 
     def batch(self, freqs, pwv, elevation):
         """Ensure grid covers all queried points, then delegate to base."""

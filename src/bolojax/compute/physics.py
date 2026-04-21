@@ -120,9 +120,8 @@ def ohmic_eff(freq, sigma):
 
 
 def Trj_over_Tb(freq, Tb):
-    """
-    Brightness temperature [K_RJ] given a physical temperature [K]
-    and frequency [Hz]. dTrj / dTb
+    r"""
+    Ratio $dT_{\mathrm{RJ}} / dT_b$ for a given physical temperature and frequency.
 
     Args:
     freq (float): frequencies [Hz]
@@ -134,7 +133,7 @@ def Trj_over_Tb(freq, Tb):
 
 
 def Tb_from_spec_rad(freq, pow_spec):
-    """Physical temperature from spectral radiance [W/(m^2 sr Hz)]."""
+    r"""Physical temperature from spectral radiance $[\mathrm{W}/(\mathrm{m}^2\,\mathrm{sr}\,\mathrm{Hz})]$."""
     return (h * freq / kB) / jnp.log((2 * h * (freq**3 / c**2) / pow_spec) + 1)
 
 
@@ -169,8 +168,10 @@ def dielectric_loss(freq, thick, ind, ltan):
 
 
 def rj_temp(powr, bw, eff=1.0):
-    """
-    RJ temperature [K_RJ] given power [W], bandwidth [Hz], and efficiency
+    r"""
+    Rayleigh-Jeans temperature given power, bandwidth, and efficiency.
+
+    Returns temperature in $K_{\mathrm{RJ}}$.
 
     Args:
     powr (float): power [W]
@@ -194,8 +195,8 @@ def n_occ(freq, temp):
 
 
 def a_omega(freq):
-    """
-    Throughput [m^2] for a diffraction-limited detector
+    r"""
+    Throughput $[\mathrm{m}^2]$ for a diffraction-limited detector
     given the frequency [Hz]
 
     Args:
@@ -205,8 +206,8 @@ def a_omega(freq):
 
 
 def bb_spec_rad(freq, temp, emis=1.0):
-    """
-    Blackbody spectral radiance [W/(m^2 sr Hz)] given a frequency [Hz],
+    r"""
+    Blackbody spectral radiance $[\mathrm{W}/(\mathrm{m}^2\,\mathrm{sr}\,\mathrm{Hz})]$ given a frequency [Hz],
     blackbody temperature [K], and blackbody emissivity
 
     Args:
@@ -232,9 +233,9 @@ def bb_pow_spec(freq, temp, emis=1.0):
 
 
 def ani_pow_spec(freq, temp, emiss=1.0):
-    """
+    r"""
     Derivative of blackbody power spectrum with respect to blackbody
-    temperature, dP/dT, on a diffraction-limited detector [W/K] given
+    temperature, $dP/dT$, on a diffraction-limited detector [W/K] given
     a frequency [Hz], blackbody temperature [K], and blackbody
     emissivity
 

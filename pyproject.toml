@@ -139,10 +139,13 @@ ignore = [
     "N803",    # math variable naming
     "N806",    # math variable naming
     "ISC001",  # conflicts with ruff formatter
+    "PLC0414", # X as X re-exports in __init__.py
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
+"nb/**" = ["T20"]
+"scripts/**" = ["T20"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -152,7 +155,8 @@ indent-style = "space"
 convention = "google"
 
 [tool.codespell]
-skip = "*.npy,uv.lock"
+skip = "*.npy,uv.lock,docs/_build,*.fits"
+ignore-words-list = "emiss,boloR"
 
 [tool.pyrefly]
 project-excludes = ["**/.venv*"]

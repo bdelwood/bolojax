@@ -4,7 +4,6 @@
 :start-after: <!-- readme-include-start -->
 ```
 
-
 ```{toctree}
 :hidden:
 :caption: API Reference

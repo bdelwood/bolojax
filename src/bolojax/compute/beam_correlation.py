@@ -1,15 +1,15 @@
-"""Beam correlation factors for photon noise calculations.
+r"""Beam correlation factors for photon noise calculations.
 
 Computes the VCZT (van Cittert-Zernike theorem) amplitude coherence between
 detector pixels as a function of separation, following the formalism of
 Hill & Kusaka, "Photon noise correlations in millimeter-wave telescopes,"
 Appl. Opt. 63, 1654 (2024), arXiv:2309.01153.
 
-The aperture coherence gamma^np_ap,ij (Hill Eq. 53) and stop coherence
-gamma^np_stop,ij (Eq. 56) are computed via a Hankel transform of the beam
-illumination intensity ``|G(r)|^2`` (Eq. 54).  The HBT intensity coherence
-``|gamma|^2`` (Eq. 17) enters the array noise covariance (Eq. 68) as a
-multiplicative factor on the Bose (wave) noise term.
+The aperture coherence $\gamma^\mathrm{np}_{\mathrm{ap},ij}$ (Hill Eq. 53) and
+stop coherence $\gamma^\mathrm{np}_{\mathrm{stop},ij}$ (Eq. 56) are computed
+via a Hankel transform of the beam illumination intensity $|G(r)|^2$ (Eq. 54).
+The HBT intensity coherence $|\gamma|^2$ (Eq. 17) enters the array noise
+covariance (Eq. 68) as a multiplicative factor on the Bose (wave) noise term.
 
 For the "bolocalc" preset the poly_taper beam parameters were obtained by
 fitting the Hankel transform against the 100-point coherentApertCorr.pkl
@@ -28,6 +28,7 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax.scipy.special import bessel_jn
 
 
@@ -87,27 +88,30 @@ def he11(r, R, R_taper, softening=0.01):
 
 
 def beam_coherence(p, beam_func, r_min=0.0, r_max=1.0, n_pts=10000):
-    """Compute amplitude coherence gamma(p) via Hankel transform.
+    r"""Compute amplitude coherence $\gamma(p)$ via Hankel transform.
 
     Evaluates the normalized zeroth-order Hankel transform of the beam
-    intensity pattern ``|G(r)|^2`` over the radial range [r_min, r_max],
+    intensity pattern $|G(r)|^2$ over the radial range [r_min, r_max],
     implementing the circularly-symmetric form of Hill Eq. 53 (aperture)
     and Eq. 56 (stop):
 
-        gamma(p) = (1/eta) * integral_{r_min}^{r_max} ``|G(r)|^2`` J_0(2*pi*p*r) 2*pi*r dr
+    .. math::
 
-    where eta is the integrated power in the region. The flat-illumination
+        \gamma(p) = \frac{1}{\eta}
+        \int_{r_\min}^{r_\max} |G(r)|^2 \, J_0(2\pi p r) \, 2\pi r \, dr
+
+    where $\eta$ is the integrated power in the region.  The flat-illumination
     limit recovers the Bessel/jinc result of Eq. 55.
 
     Args:
-        p: detector separations in F*lambda units (array)
-        beam_func: callable returning ``|G(r)|^2`` given r in units of D_ap/2
-        r_min: inner integration bound (0 for aperture, R_ap for stop)
+        p: detector separations in $F\lambda$ units (array)
+        beam_func: callable returning $|G(r)|^2$ given r in units of $D_\mathrm{ap}/2$
+        r_min: inner integration bound (0 for aperture, $R_\mathrm{ap}$ for stop)
         r_max: outer integration bound
         n_pts: number of integration points
 
     Returns:
-        gamma(p) array, normalized so gamma(0) = 1
+        $\gamma(p)$ array, normalized so $\gamma(0) = 1$
     """
     p = jnp.atleast_1d(jnp.asarray(p, dtype=jnp.float64))
     r = jnp.linspace(max(r_min, 1e-10), r_max, n_pts)
@@ -155,28 +159,26 @@ def load_bolocalc_stop():
     well as 2D FFT and Monte Carlo simulations, could not reproduce the
     sidelobe structure to better than ~2% RMS.
     """
-    import numpy as np  # noqa: PLC0415
-
     data_dir = Path(__file__).parent / "data"
     data = np.load(data_dir / "stop_corr.npy")  # (2, 100): [pitch, values]
     return jnp.asarray(data[0]), jnp.asarray(data[1])
 
 
 def compute_corr_curves(preset="bolocalc", p_grid=None):
-    """Compute aperture and stop coherence curves for a given preset.
+    r"""Compute aperture and stop coherence curves for a given preset.
 
-    Returns the amplitude coherence gamma_ap (Hill Eq. 53) and intensity
-    coherence ``|gamma_stop|^2`` (Eq. 56, squared per Eq. 17) on a pitch grid.
-    For physically motivated presets these are the two terms in the
-    decomposition of the total mutual intensity (Eq. 51).
+    Returns the amplitude coherence $\gamma_\mathrm{ap}$ (Hill Eq. 53) and
+    intensity coherence $|\gamma_\mathrm{stop}|^2$ (Eq. 56, squared per
+    Eq. 17) on a pitch grid.  For physically motivated presets these are the
+    two terms in the decomposition of the total mutual intensity (Eq. 51).
 
     Args:
         preset: name of a preset ("bolocalc", "trunc_gauss", "he11")
             or a dict with beam model parameters
-        p_grid: pitch grid in F*lambda units. Defaults to linspace(0, 5, 100).
+        p_grid: pitch grid in $F\lambda$ units. Defaults to linspace(0, 5, 100).
 
     Returns:
-        (p_grid, gamma_apert, gamma_stop) arrays
+        ``(p_grid, gamma_apert, gamma_stop)`` arrays
     """
     if p_grid is None:
         p_grid = jnp.linspace(0, 5, 100)
