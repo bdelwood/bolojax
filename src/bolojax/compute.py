@@ -221,6 +221,7 @@ def trj_over_tcmb(freqs):
     return jnp.trapezoid(factor_spec, freqs) / bw
 
 
+@eqx.filter_jit
 def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityResult:
     """Pure, jax-traceable sensitivity computation.
 
