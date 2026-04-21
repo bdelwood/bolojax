@@ -68,7 +68,7 @@ class Instrument(BaseModel):
         universe.sample(nsamples)
         self.obs_effic.sample(nsamples)
         for camera in self.cameras.values():
-            camera.eval_sky(universe, freq_resol)
+            camera.eval_sky(universe, nsamples, freq_resol)
 
     def eval_instrument(self, nsamples=0, freq_resol=None):
         """Sample requested inputs and evaluate the parameters of the instrument model."""

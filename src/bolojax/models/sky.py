@@ -224,16 +224,18 @@ class Atmosphere(BaseModel):
         self._sampled_elev = np.atleast_1d(self._telescope.elevation())
         self._nsamples = max(nsamples, 1)
 
-    def temp(self, freqs):
+    def temp(self, freqs, elevation=None):
         """Brightness temperature [K] for sampled conditions."""
         nsamp = max(self._nsamples, 1)
-        temps, _ = self.cached_model.batch(freqs, self._sampled_pwv, self._sampled_elev)
+        elev = elevation if elevation is not None else self._sampled_elev
+        temps, _ = self.cached_model.batch(freqs, self._sampled_pwv, elev)
         return temps.reshape((nsamp, 1, len(freqs)))
 
-    def trans(self, freqs):
+    def trans(self, freqs, elevation=None):
         """Transmission [0-1] for sampled conditions."""
         nsamp = max(self._nsamples, 1)
-        _, transs = self.cached_model.batch(freqs, self._sampled_pwv, self._sampled_elev)
+        elev = elevation if elevation is not None else self._sampled_elev
+        _, transs = self.cached_model.batch(freqs, self._sampled_pwv, elev)
         return transs.reshape((nsamp, 1, len(freqs)))
 
 
@@ -354,17 +356,17 @@ class Universe(BaseModel):
         self.synchrotron.sample(nsamples)
         self.atmosphere.sample(nsamples)
 
-    def temp(self, freqs):
+    def temp(self, freqs, elevation=None):
         """Get sampled temperatures."""
         ret = OrderedDict()
         ret["cmb"] = physics.Tcmb
         ret["dust"] = self.dust.temp(freqs)
         ret["synchrotron"] = self.synchrotron.temp(freqs)
-        ret["atmosphere"] = self.atmosphere.temp(freqs)
+        ret["atmosphere"] = self.atmosphere.temp(freqs, elevation=elevation)
         return ret
 
-    def trans(self, freqs):
+    def trans(self, freqs, elevation=None):
         """Get sampled transmission coefs."""
         ret = OrderedDict()
-        ret["atmosphere"] = self.atmosphere.trans(freqs)
+        ret["atmosphere"] = self.atmosphere.trans(freqs, elevation=elevation)
         return ret

@@ -257,14 +257,16 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         self._det_emiss = 0.0
         self._det_temp = self._camera.bath_temperature()
 
-    def eval_sky(self, universe, freq_resol=None):
+    def eval_sky(self, universe, freq_resol=None, elevation=None):
         """Evaluate the sky parameters for this channel.
 
-        This is done here, b/c the frequencies we care about are channel dependent.
+        If *elevation* is provided (from per-pixel sampling), the
+        atmosphere is evaluated at that elevation instead of the
+        instrument-level default.
         """
         self._freqs = self.compute_evaluation_freqs(freq_resol)
-        self._sky_temp_dict = universe.temp(self._freqs)
-        self._sky_tran_dict = universe.trans(self._freqs)
+        self._sky_temp_dict = universe.temp(self._freqs, elevation=elevation)
+        self._sky_tran_dict = universe.trans(self._freqs, elevation=elevation)
 
     @property
     def optical_effic(self):

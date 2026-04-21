@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from bolojax.compute.noise import Noise
 
 from .channel import Channel
 from .params import Var
+from .utils import is_not_none
 
 
 class Camera(BaseModel):
@@ -19,6 +21,7 @@ class Camera(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     boresite_elevation: Var() = 0.0
+    pixel_elevation: Var() = None
     optical_coupling: Var() = 1.0
     f_number: Var() = 2.5
     bath_temperature: Var() = 0.1
@@ -86,10 +89,22 @@ class Camera(BaseModel):
         for chan in self.channels.values():
             chan.eval_optical_chain(nsamples, freq_resol)
 
-    def eval_sky(self, universe, freq_resol=None):
-        """Compute parameters related to the sky that depend on the particular camera."""
+    def eval_sky(self, universe, nsamples=0, freq_resol=None):
+        """Compute parameters related to the sky that depend on the particular camera.
+
+        If ``pixel_elevation`` is configured, each channel gets the
+        atmosphere evaluated at a per-pixel elevation drawn from the
+        distribution. Otherwise the instrument-level elevation is used.
+        """
+        elevation = None
+        if (
+            is_not_none(self.pixel_elevation)
+            and np.isfinite(self.pixel_elevation.SI).all()
+        ):
+            self.pixel_elevation.sample(nsamples)
+            elevation = self.pixel_elevation()
         for chan in self.channels.values():
-            chan.eval_sky(universe, freq_resol)
+            chan.eval_sky(universe, freq_resol, elevation=elevation)
 
     def eval_det_response(self, nsample=0, freq_resol=None):
         """Compute the performance of the detectors of the optical chain."""
