@@ -7,8 +7,8 @@ from typing import Any, ClassVar
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from . import noise, physics
-from .cfg import Var
+from bolojax.compute import noise, physics
+from .params import Var
 from .sky import Universe
 from .utils import is_not_none
 

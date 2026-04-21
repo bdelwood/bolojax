@@ -13,8 +13,8 @@ from typing import ClassVar
 import jax.numpy as jnp
 import numpy as np
 
-from .cfg import OutputField
-from .compute import BoloParams, OpticsState, compute_sensitivity
+from bolojax.models.params import OutputField
+from bolojax.compute.sensitivity import BoloParams, OpticsState, compute_sensitivity
 
 
 def _bcast_list(array_list):

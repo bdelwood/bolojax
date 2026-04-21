@@ -10,8 +10,8 @@ import h5py as hp
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from . import physics
-from .cfg import Var
+from bolojax.compute import physics
+from .params import Var
 from .utils import cfg_path, is_not_none
 
 GHz_to_Hz = 1.0e09

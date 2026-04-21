@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from .cfg import Var
+from .params import Var
 
 
 class Readout(BaseModel):

@@ -10,11 +10,11 @@ from astropy.table import vstack
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from .camera import build_cameras
-from .cfg import Var
-from .data_utils import TableDict
+from .params import Var
+from bolojax.io.tables import TableDict
 from .optics import build_optics
 from .readout import Readout
-from .sensitivity import Sensitivity
+from bolojax.io.sensitivity import Sensitivity
 
 
 class Instrument(BaseModel):

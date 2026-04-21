@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from .cfg import Var, expand_dict
+from .params import Var, expand_dict
 from .channel import Channel
 
 
