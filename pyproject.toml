@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gpu = ["jax[cuda12]"]
+gpu = ["jax[cuda13]"]
 
 [project.scripts]
 bolojax = "bolojax.cli:main"
