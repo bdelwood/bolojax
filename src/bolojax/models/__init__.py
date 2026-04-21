@@ -15,4 +15,4 @@ from .params import (
 )
 from .readout import Readout
 from .sky import AtmModel, Atmosphere, CustomAtm, Dust, Foreground, Synchrotron, Universe
-from .top import SimConfig, Top
+from .experiment import Experiment, SimConfig

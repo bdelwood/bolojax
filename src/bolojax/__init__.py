@@ -32,8 +32,8 @@ from .models.sky import Dust as Dust  # noqa: E402
 from .models.sky import Foreground as Foreground  # noqa: E402
 from .models.sky import Synchrotron as Synchrotron  # noqa: E402
 from .models.sky import Universe as Universe  # noqa: E402
-from .models.top import SimConfig as SimConfig  # noqa: E402
-from .models.top import Top as Top  # noqa: E402
+from .models.experiment import Experiment as Experiment  # noqa: E402
+from .models.experiment import SimConfig as SimConfig  # noqa: E402
 from .compute.sensitivity import BoloParams as BoloParams  # noqa: E402
 from .compute.sensitivity import OpticsState as OpticsState  # noqa: E402
 from .compute.sensitivity import SensitivityResult as SensitivityResult  # noqa: E402

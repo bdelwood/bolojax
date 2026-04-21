@@ -1,4 +1,4 @@
-"""Top level configuration."""
+"""Experiment-level configuration."""
 
 from pathlib import Path
 
@@ -26,8 +26,8 @@ class SimConfig(BaseModel):
         set_config_dir(self.config_dir)
 
 
-class Top(BaseModel):
-    """Top level configuration."""
+class Experiment(BaseModel):
+    """A complete bolometer sensitivity experiment."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 

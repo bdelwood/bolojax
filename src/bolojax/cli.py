@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from bolojax import Top
+from bolojax import Experiment
 
 
 def main():
@@ -21,13 +21,13 @@ def main():
     with Path(args.input).open() as f:
         dd = yaml.safe_load(f)
 
-    top = Top(**dd)
-    top.run()
-    top.instrument.print_summary()
-    top.instrument.print_optical_output()
+    experiment = Experiment(**dd)
+    experiment.run()
+    experiment.instrument.print_summary()
+    experiment.instrument.print_optical_output()
 
     if args.output:
-        top.instrument.write_tables(args.output)
+        experiment.instrument.write_tables(args.output)
 
 
 if __name__ == "__main__":
