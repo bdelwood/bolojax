@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict as odict
+from collections import OrderedDict
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from .channel import Channel
-from .params import Var, expand_dict
+from .params import Var
 
 
 class Camera(BaseModel):
@@ -33,10 +33,10 @@ class Camera(BaseModel):
     def model_post_init(self, __context):
         # Build channels from chan_config if channels weren't provided directly
         if not self.channels and self.chan_config:
-            expanded = expand_dict(self.chan_config)
-            channels = odict()
-            for name, cfg in expanded.items():
-                channels[name] = Channel(**cfg)
+            defaults = self.chan_config.get("default", {})
+            channels = OrderedDict()
+            for name, overrides in self.chan_config["elements"].items():
+                channels[name] = Channel(**{**defaults, **(overrides or {})})
             self.channels = channels
 
     @property
@@ -55,7 +55,7 @@ class Camera(BaseModel):
         """Pass information from the parent instrument down the food chain."""
         self._instrument = instrument
         self._name = name
-        optics = odict()
+        optics = OrderedDict()
         for key, val in instrument.optics.elements.items():
             if key in self.skip_optical_elements:
                 continue
@@ -90,13 +90,12 @@ class Camera(BaseModel):
         return self._instrument
 
 
-def build_cameras(def_channel_config: dict, camera_config: dict) -> odict:
+def build_cameras(def_channel_config: dict, camera_config: dict) -> OrderedDict:
     """Build a set of cameras from a configuration dictionary."""
-    cam_full = expand_dict(camera_config)
-
-    ret = odict()
-    for key, val in cam_full.items():
-        cam_cfg = val.copy()
+    defaults = camera_config.get("default", {})
+    ret = OrderedDict()
+    for key, overrides in camera_config["elements"].items():
+        cam_cfg = {**defaults, **(overrides or {})}
         cam_cfg["chan_config"]["default"] = def_channel_config.copy()
         ret[key] = Camera(**cam_cfg)
     return ret

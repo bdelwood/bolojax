@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict as odict
+from collections import OrderedDict
 from functools import cached_property
 from typing import Any, ClassVar
 
@@ -252,7 +252,7 @@ class Universe(BaseModel):
 
     def temp(self, freqs):
         """Get sampled temperatures."""
-        ret = odict()
+        ret = OrderedDict()
         ret["cmb"] = physics.Tcmb
         ret["dust"] = self.dust.temp(freqs)
         ret["synchrotron"] = self.synchrotron.temp(freqs)
@@ -261,6 +261,6 @@ class Universe(BaseModel):
 
     def trans(self, freqs):
         """Get sampled transmission coefs."""
-        ret = odict()
+        ret = OrderedDict()
         ret["atmosphere"] = self.atmosphere.trans(freqs)
         return ret

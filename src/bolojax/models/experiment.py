@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, ConfigDict
 
 from .instrument import Instrument
@@ -37,6 +38,14 @@ class Experiment(BaseModel):
 
     def model_post_init(self, __context):
         self.universe.atmosphere.set_telescope(self.instrument)
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "Experiment":
+        """Load an experiment from a YAML config file."""
+        path = Path(path)
+        with path.open() as f:
+            config = yaml.safe_load(f)
+        return cls.model_validate(config)
 
     def run(self):
         """Run the entire analysis."""

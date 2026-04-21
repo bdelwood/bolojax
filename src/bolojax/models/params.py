@@ -6,7 +6,7 @@ Provides ParamHolder, VariableHolder, OutputField, OutputHolder, and the
 
 from __future__ import annotations
 
-from collections import OrderedDict as odict
+from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Annotated, Any
 
@@ -20,20 +20,6 @@ from .pdf import ChoiceDist
 from .unit import Unit
 from .utils import cfg_path, is_none
 
-
-def expand_dict(in_dict):
-    """Expand a dict with 'default'/'elements' template structure."""
-    if "default" not in in_dict:
-        return in_dict
-    default_dict = in_dict.get("default")
-    elem_dict = in_dict.get("elements")
-    o_dict = odict()
-    for key, elem in elem_dict.items():
-        o_dict[key] = default_dict.copy()
-        if elem is None:
-            continue
-        o_dict[key].update(elem)
-    return o_dict
 
 class ParamHolder:
     """Container for a parameter value with unit conversion."""
@@ -289,7 +275,7 @@ class StatsSummary:
 
     def todict(self):
         """Put the summary stats into a dictionary."""
-        o_dict = odict()
+        o_dict = OrderedDict()
         for vn in ["_mean", "_median", "_std"]:
             o_dict[f"{self._name}{vn}"] = np.atleast_1d(self.__dict__[vn])
         for idx, vn in enumerate(["_n_2_sig", "_n_1_sig", "_p_1_sig", "_p_2_sig"]):

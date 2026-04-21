@@ -7,7 +7,7 @@ the OutputField descriptor pattern for summary/table output.
 from __future__ import annotations
 
 import sys
-from collections import OrderedDict as odict
+from collections import OrderedDict
 from typing import ClassVar
 
 import jax.numpy as jnp
@@ -210,14 +210,14 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
 
     def summarize(self):
         """Compute and cache summary statistics."""
-        self._summary = odict()
+        self._summary = OrderedDict()
         for key in self.summary_fields:
             self._summary[key] = type(self)._output_fields[key].summarize(self)
         return self._summary
 
     def analyze_optical_chain(self):
         """Compute and cache optical output statistics."""
-        self._optical_output = odict()
+        self._optical_output = OrderedDict()
         for key in self.optical_output_fields:
             self._optical_output[key] = (
                 type(self)._output_fields[key].summarize_by_element(self)
@@ -245,7 +245,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
 
     def make_sims_table(self, name, table_dict):
         """Make a table with per-simulation parameters."""
-        o_dict = odict(
+        o_dict = OrderedDict(
             [
                 (key, type(self)._output_fields[key].__get__(self).value.flatten())
                 for key in self.summary_fields
@@ -261,7 +261,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
 
     def make_optical_table(self, name, table_dict):
         """Make a table with optical output parameters."""
-        o_dict = odict()
+        o_dict = OrderedDict()
         for val in self._optical_output.values():
             o_dict.update(val.todict())
         o_dict["element"] = np.array(self._elem_names)
@@ -270,7 +270,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
 
     def make_sum_table(self, name, table_dict):
         """Make a table with summary parameters."""
-        o_dict = odict()
+        o_dict = OrderedDict()
         for val in self._summary.values():
             o_dict.update(val.todict())
         o_dict["channel"] = np.array([self._channel_name])

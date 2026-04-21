@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from collections import OrderedDict as odict
+from collections import OrderedDict
 from typing import Any
 
 from astropy.table import vstack
@@ -79,7 +79,7 @@ class Instrument(BaseModel):
 
     def eval_sensitivities(self):
         """Evaluate the sensitivities."""
-        self._sns_dict = odict()
+        self._sns_dict = OrderedDict()
         for cam_name, camera in self.cameras.items():
             for chan_name, channel in camera.channels.items():
                 full_name = f"{cam_name}_{chan_name}"

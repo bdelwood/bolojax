@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict as odict
+from collections import OrderedDict
 from typing import Any
 
 import numpy as np
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from bolojax.compute import physics
 
-from .params import Var, expand_dict
+from .params import Var
 from .utils import is_not_none
 
 
@@ -209,23 +209,32 @@ def build_optics(config: dict[str, Any]) -> Optics:
     Parameters
     ----------
     config : dict
-        Hierarchical dictionary with 'default'/'elements' structure.
-        Each element may have an ``obj_type`` key (Mirror, Dielectric,
-        ApertureStop) or default to OpticalElement.
+        Dictionary with ``default`` (optional) and ``elements`` keys.
+        ``elements`` is a list of single-key dicts where the key is
+        the element name and the value is its config::
+
+            elements:
+              - forebaffle: { temperature: 240.0 }
+              - window: { obj_type: Dielectric, thickness: 0.001 }
+
+        Element ordering is preserved (it defines the optical chain).
 
     Returns
     -------
     Optics
         Instance with all requested optical elements categorised.
     """
-    expanded = expand_dict(config)
-    elements = odict()
-    mirrors = odict()
-    dielectics = odict()
-    apertureStops = odict()
+    defaults = config.get("default", {})
+    elem_list = config["elements"]
 
-    for name, elem_cfg in expanded.items():
-        cfg = elem_cfg.copy()
+    elements = OrderedDict()
+    mirrors = OrderedDict()
+    dielectics = OrderedDict()
+    apertureStops = OrderedDict()
+
+    for item in elem_list:
+        (name, props), = item.items()
+        cfg = {**defaults, **(props or {})}
         obj_type = cfg.pop("obj_type", None)
         cls = _ELEMENT_TYPES[obj_type]
         elem = cls(**cfg)
