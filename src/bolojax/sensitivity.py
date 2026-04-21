@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .cfg import OutputField
-from .compute import compute_sensitivity
+from .compute import BoloParams, OpticsState, compute_sensitivity
 
 
 def _bcast_list(array_list):
@@ -156,45 +156,47 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
             channel.noise_calc.corr_facts(self._elem_names, float(det_pitch), ap_names)
         )
 
-        # Build params dict for the pure function
-        params = {
-            "Tc": jnp.asarray(channel.Tc.SI, dtype=jnp.float64),
-            "bath_temp": jnp.asarray(
-                self._camera.bath_temperature(), dtype=jnp.float64
-            ),
-            "carrier_index": jnp.asarray(channel.carrier_index.SI, dtype=jnp.float64),
-            "psat": jnp.asarray(channel.psat.SI, dtype=jnp.float64),
-            "psat_factor": jnp.asarray(channel.psat_factor.SI, dtype=jnp.float64),
-            "G": jnp.asarray(channel.G.SI, dtype=jnp.float64),
-            "Flink": jnp.asarray(channel.Flink.SI, dtype=jnp.float64),
-            "optical_coupling": jnp.asarray(
-                self._camera.optical_coupling(), dtype=jnp.float64
-            ),
-            "read_frac": jnp.asarray(channel.read_frac(), dtype=jnp.float64),
-            "squid_nei": jnp.asarray(channel.squid_nei.SI, dtype=jnp.float64),
-            "bolo_R": jnp.asarray(channel.bolo_resistance.SI, dtype=jnp.float64),
-            "response_factor": jnp.asarray(
-                channel.response_factor.SI, dtype=jnp.float64
-            ),
-            "NET_scale": jnp.asarray(self._instrument.NET(), dtype=jnp.float64),
-            "ndet": jnp.asarray(float(channel.ndet), dtype=jnp.float64),
-            "det_yield": jnp.asarray(channel.Yield(), dtype=jnp.float64),
-            "fsky": jnp.asarray(self._instrument.sky_fraction(), dtype=jnp.float64),
-            "obs_time": jnp.asarray(self._instrument.obs_time(), dtype=jnp.float64),
-            "obs_effic": jnp.asarray(self._instrument.obs_effic(), dtype=jnp.float64),
-        }
-
-        # Call the pure jax computation
-
-        results = compute_sensitivity(
-            freqs, bandwidth, temps, trans, emiss, params, corr_factors
+        # Build equinox modules for the pure function
+        optics = OpticsState(
+            freqs=freqs,
+            bandwidth=bandwidth,
+            temps=temps,
+            trans=trans,
+            emiss=emiss,
+            corr_factors=corr_factors,
         )
 
-        # Unpack results into OutputField holders
+        params = BoloParams(
+            Tc=jnp.asarray(channel.Tc.SI, dtype=jnp.float64),
+            bath_temp=jnp.asarray(self._camera.bath_temperature(), dtype=jnp.float64),
+            carrier_index=jnp.asarray(channel.carrier_index.SI, dtype=jnp.float64),
+            psat=jnp.asarray(channel.psat.SI, dtype=jnp.float64),
+            psat_factor=jnp.asarray(channel.psat_factor.SI, dtype=jnp.float64),
+            G=jnp.asarray(channel.G.SI, dtype=jnp.float64),
+            Flink=jnp.asarray(channel.Flink.SI, dtype=jnp.float64),
+            optical_coupling=jnp.asarray(
+                self._camera.optical_coupling(), dtype=jnp.float64
+            ),
+            read_frac=jnp.asarray(channel.read_frac(), dtype=jnp.float64),
+            squid_nei=jnp.asarray(channel.squid_nei.SI, dtype=jnp.float64),
+            bolo_R=jnp.asarray(channel.bolo_resistance.SI, dtype=jnp.float64),
+            response_factor=jnp.asarray(channel.response_factor.SI, dtype=jnp.float64),
+            NET_scale=jnp.asarray(self._instrument.NET(), dtype=jnp.float64),
+            ndet=int(channel.ndet),
+            det_yield=jnp.asarray(channel.Yield(), dtype=jnp.float64),
+            fsky=jnp.asarray(self._instrument.sky_fraction(), dtype=jnp.float64),
+            obs_time=jnp.asarray(self._instrument.obs_time(), dtype=jnp.float64),
+            obs_effic=jnp.asarray(self._instrument.obs_effic(), dtype=jnp.float64),
+        )
 
+        # Call the pure jax computation
+        results = compute_sensitivity(optics, params)
+
+        # Unpack results into OutputField holders
         for key, field in type(self)._output_fields.items():
-            if key in results:
-                getattr(self, field.private_name).set_from_SI(np.asarray(results[key]))
+            val = getattr(results, key, None)
+            if val is not None:
+                getattr(self, field.private_name).set_from_SI(np.asarray(val))
 
         self.summarize()
         self.analyze_optical_chain()

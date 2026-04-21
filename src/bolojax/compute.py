@@ -1,15 +1,17 @@
 """Pure, jax-traceable sensitivity computation.
 
 This module contains the core math for bolometer sensitivity calculations,
-expressed entirely in jax.numpy operations.
+expressed entirely in jax.numpy operations. All functions are differentiable
+via jax.grad / eqx.filter_grad.
 
-The main entry point is :func:`compute_sensitivity`, which takes pre-broadcast
-arrays of temperatures, transmissions, and emissivities plus a parameter dict,
-and returns all computed sensitivity quantities.
+The main entry point is :func:`compute_sensitivity`, which takes an
+:class:`OpticsState` and :class:`BoloParams` and returns a
+:class:`SensitivityResult`.
 """
 
 from __future__ import annotations
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 
@@ -18,14 +20,99 @@ from . import noise, physics
 NSKY_SRC = 4
 
 
+class OpticsState(eqx.Module):
+    """Pre-computed optical chain state (from channel/instrument setup).
+
+    These arrays are typically fixed for a given instrument configuration
+    and not differentiated through. They describe the optical chain geometry.
+    """
+
+    freqs: jax.Array  # (n_freq,) frequency evaluation points [Hz]
+    bandwidth: float  # integrated bandwidth [Hz]
+    temps: jax.Array  # (n_elem, ...) broadcast temperatures [K]
+    trans: jax.Array  # (n_elem+2, ...) padded transmissions
+    emiss: jax.Array  # (n_elem, 1, 1, n_freq) emissivities
+    corr_factors: jax.Array  # (n_elem,) Bose correlation factors
+
+
+class BoloParams(eqx.Module):
+    """Bolometer and observation parameters.
+
+    Float fields are differentiable via eqx.filter_grad.
+    Integer fields (ndet) are automatically treated as static.
+    """
+
+    # Bolometer thermal
+    Tc: jax.Array
+    bath_temp: jax.Array
+    carrier_index: jax.Array
+    psat: jax.Array
+    psat_factor: jax.Array
+    G: jax.Array
+    Flink: jax.Array
+
+    # Readout
+    squid_nei: jax.Array
+    bolo_R: jax.Array
+    response_factor: jax.Array
+    read_frac: jax.Array
+    optical_coupling: jax.Array
+
+    # Observation / array
+    NET_scale: jax.Array
+    ndet: int
+    det_yield: jax.Array
+    fsky: jax.Array
+    obs_time: jax.Array
+    obs_effic: jax.Array
+
+
+class SensitivityResult(eqx.Module):
+    """All computed sensitivity quantities as a JAX pytree."""
+
+    effic: jax.Array
+    opt_power: jax.Array
+    P_sat: jax.Array
+    G: jax.Array
+    Flink: jax.Array
+    tel_power: jax.Array
+    sky_power: jax.Array
+    tel_rj_temp: jax.Array
+    sky_rj_temp: jax.Array
+    elem_effic: jax.Array
+    elem_cumul_effic: jax.Array
+    elem_power_from_sky: jax.Array
+    elem_power_to_det: jax.Array
+    NEP_bolo: jax.Array
+    NEP_read: jax.Array
+    NEP_ph: jax.Array
+    NEP_ph_corr: jax.Array
+    NEP: jax.Array
+    NEP_corr: jax.Array
+    NET: jax.Array
+    NET_corr: jax.Array
+    NET_RJ: jax.Array
+    NET_corr_RJ: jax.Array
+    NET_arr: jax.Array
+    NET_arr_RJ: jax.Array
+    corr_fact: jax.Array
+    map_depth: jax.Array
+    map_depth_RJ: jax.Array
+
+
 def resolve_psat(psat, psat_factor, opt_pow):
     """Resolve Psat from explicit value or psat_factor.
 
     Uses explicit psat where finite, otherwise falls back to
     opt_pow * psat_factor (matching BoloCalc's convention).
+
+    NaN-safe: replaces NaN with a dummy value before computing to avoid
+    gradient leakage through jnp.where's unused branch.
     """
+    is_explicit = jnp.isfinite(psat)
+    safe_psat = jnp.where(is_explicit, psat, 1.0)
     fallback = opt_pow * psat_factor
-    return jnp.where(jnp.isfinite(psat), psat, fallback)
+    return jnp.where(is_explicit, safe_psat, fallback)
 
 
 def compute_G(G_explicit, psat, carrier_index, bath_temp, Tc):
@@ -33,8 +120,10 @@ def compute_G(G_explicit, psat, carrier_index, bath_temp, Tc):
 
     Uses explicit G where finite, otherwise computes from Psat.
     """
+    is_explicit = jnp.isfinite(G_explicit)
+    safe_G = jnp.where(is_explicit, G_explicit, 1.0)
     G_computed = noise.G(psat, carrier_index, bath_temp, Tc)
-    return jnp.where(jnp.isfinite(G_explicit), G_explicit, G_computed)
+    return jnp.where(is_explicit, safe_G, G_computed)
 
 
 def compute_Flink(Flink_explicit, carrier_index, bath_temp, Tc):
@@ -43,8 +132,10 @@ def compute_Flink(Flink_explicit, carrier_index, bath_temp, Tc):
     Uses explicit Flink where finite, otherwise computes from
     carrier index and temperatures.
     """
+    is_explicit = jnp.isfinite(Flink_explicit)
+    safe_Flink = jnp.where(is_explicit, Flink_explicit, 1.0)
     Flink_computed = noise.Flink(carrier_index, bath_temp, Tc)
-    return jnp.where(jnp.isfinite(Flink_explicit), Flink_explicit, Flink_computed)
+    return jnp.where(is_explicit, safe_Flink, Flink_computed)
 
 
 def compute_read_nep(
@@ -57,49 +148,42 @@ def compute_read_nep(
     approximation (NEP_read ~ read_frac * sqrt(NEP_bolo^2 + NEP_ph^2)).
     """
     # Full readout NEP: nei / responsivity
-    p_bias = jnp.clip(psat - opt_power, 0.0, jnp.inf)
+    # Use safe values to avoid NaN gradient leakage through unused branch
+    inputs_valid = jnp.isfinite(squid_nei) & jnp.isfinite(bolo_R)
+    safe_nei = jnp.where(inputs_valid, squid_nei, 1.0)
+    safe_R = jnp.where(inputs_valid, bolo_R, 1.0)
+
+    p_bias = jnp.clip(psat - opt_power, 1e-30, jnp.inf)
     sfact = jnp.where(jnp.isfinite(response_factor), response_factor, 1.0)
-    responsivity = sfact / jnp.sqrt(bolo_R * p_bias)
-    full_read_nep = squid_nei / responsivity
+    responsivity = sfact / jnp.sqrt(safe_R * p_bias)
+    full_read_nep = safe_nei / responsivity
 
     # Fallback when squid_nei or bolo_R not provided
     fallback_nep = jnp.sqrt((1 + read_frac) ** 2 - 1.0) * jnp.sqrt(
-        NEP_bolo**2 + NEP_ph**2
+        NEP_bolo * NEP_bolo + NEP_ph * NEP_ph
     )
 
-    inputs_valid = jnp.isfinite(squid_nei) & jnp.isfinite(bolo_R)
     return jnp.where(inputs_valid, full_read_nep, fallback_nep)
 
 
-def photon_nep(elem_power_to_det_by_freq, freqs, corr_factors=None):
+def photon_nep(elem_power_to_det_by_freq, freqs, corr_factors):
     """Compute photon NEP and correlated photon NEP.
 
     The photon NEP includes both shot noise (h*nu*P) and wave noise (P^2)
     contributions, integrated across the band.
 
-    When corr_factors is provided, the correlated NEP accounts for
-    Bose white-noise correlations between neighbouring detectors
-    (see arXiv:1806.04316).
+    The correlated NEP accounts for Bose white-noise correlations between
+    neighbouring detectors (see arXiv:1806.04316).
 
     Args:
         elem_power_to_det_by_freq: (n_elem, ..., n_freq) power spectrum per element
         freqs: (n_freq,) frequency array
-        corr_factors: optional (n_elem,) correlation factors from Noise.corr_facts
+        corr_factors: (n_elem,) correlation factors from Noise.corr_facts
 
     Returns:
         (NEP_ph, NEP_ph_corr) tuple
     """
     popt = jnp.sum(elem_power_to_det_by_freq, axis=0)
-
-    if corr_factors is None:
-        # No correlations: popt^2 = (sum_i P_i)^2
-        popt2 = popt * popt
-        nep = jnp.sqrt(
-            jnp.trapezoid(2.0 * physics.h * freqs * popt + 2.0 * popt2, freqs)
-        )
-        return nep, nep
-
-    # With correlation factors: outer product sums
     n_elem = elem_power_to_det_by_freq.shape[0]
 
     # popt2 = sum_ij P_i * P_j (uncorrelated total power^2)
@@ -137,32 +221,25 @@ def trj_over_tcmb(freqs):
     return jnp.trapezoid(factor_spec, freqs) / bw
 
 
-def compute_sensitivity(
-    freqs, bandwidth, temps, trans, emiss, params, corr_factors=None
-):
+def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityResult:
     """Pure, jax-traceable sensitivity computation.
 
-    All inputs and outputs are jax arrays. No side effects.
-    Differentiable via jax.grad with respect to any input.
+    All inputs and outputs are jax pytrees. No side effects.
+    Differentiable via eqx.filter_grad with respect to params.
 
     Args:
-        freqs: (n_freq,) frequency evaluation array [Hz]
-        bandwidth: scalar, integrated bandwidth [Hz]
-        temps: (n_elem, ...) broadcast temperature array [K]
-        trans: (n_elem+2, ...) padded transmission array.
-            First element is 0.0 padding, last is 1.0 padding. The padding
-            allows cumulative products to be offset by one (we want the
-            product of all elements downstream of a particular element).
-        emiss: (n_elem, 1, 1, n_freq) or broadcastable emissivity array
-        params: dict with keys:
-            Tc, bath_temp, carrier_index, psat, psat_factor, G, Flink,
-            optical_coupling, read_frac, squid_nei, bolo_R, response_factor,
-            NET_scale, ndet, det_yield, fsky, obs_time, obs_effic
-        corr_factors: optional (n_elem,) Bose correlation factors
+        optics: Pre-computed optical chain state
+        params: Bolometer and observation parameters
 
     Returns:
-        dict of all computed quantities as jax arrays
+        SensitivityResult pytree with all computed quantities
     """
+    freqs = optics.freqs
+    bandwidth = optics.bandwidth
+    temps = optics.temps
+    trans = optics.trans
+    emiss = optics.emiss
+
     # Total transmission efficiency of the channel as a function of frequency.
     # Pull out the padding from trans (first and last elements).
     chan_effic = jnp.prod(trans[1:-1], axis=0)
@@ -211,39 +288,39 @@ def compute_sensitivity(
     sky_rj_temp = physics.rj_temp(sky_power, bandwidth, tel_effic)
 
     # Bolometer thermal NEP
-    psat = resolve_psat(params["psat"], params["psat_factor"], opt_power)
-    G_val = compute_G(
-        params["G"], psat, params["carrier_index"], params["bath_temp"], params["Tc"]
-    )
+    psat = resolve_psat(params.psat, params.psat_factor, opt_power)
+    G_val = compute_G(params.G, psat, params.carrier_index, params.bath_temp, params.Tc)
     flink = compute_Flink(
-        params["Flink"], params["carrier_index"], params["bath_temp"], params["Tc"]
+        params.Flink, params.carrier_index, params.bath_temp, params.Tc
     )
-    NEP_bolo = noise.bolo_NEP(flink, G_val, params["Tc"])
+    NEP_bolo = noise.bolo_NEP(flink, G_val, params.Tc)
 
-    # Photon NEP (shot + wave noise, with optional Bose correlations)
-    NEP_ph, NEP_ph_corr = photon_nep(elem_power_to_det_by_freq, freqs, corr_factors)
+    # Photon NEP (shot + wave noise, with Bose correlations)
+    NEP_ph, NEP_ph_corr = photon_nep(
+        elem_power_to_det_by_freq, freqs, optics.corr_factors
+    )
 
     # Readout NEP (full calculation or read_frac fallback)
     NEP_read = compute_read_nep(
-        params["squid_nei"],
-        params["bolo_R"],
-        params["response_factor"],
+        params.squid_nei,
+        params.bolo_R,
+        params.response_factor,
         psat,
         opt_power,
-        params["read_frac"],
+        params.read_frac,
         NEP_bolo,
         NEP_ph,
     )
 
     # Total NEP: quadrature sum of all noise sources
-    NEP = jnp.sqrt(NEP_bolo**2 + NEP_ph**2 + NEP_read**2)
-    NEP_corr = jnp.sqrt(NEP_bolo**2 + NEP_ph_corr**2 + NEP_read**2)
+    NEP = jnp.sqrt(NEP_bolo * NEP_bolo + NEP_ph * NEP_ph + NEP_read * NEP_read)
+    NEP_corr = jnp.sqrt(
+        NEP_bolo * NEP_bolo + NEP_ph_corr * NEP_ph_corr + NEP_read * NEP_read
+    )
 
     # Convert NEP to NET (noise equivalent temperature)
-    NET = noise.NET_from_NEP(NEP, freqs, chan_effic, params["optical_coupling"])
-    NET_corr = noise.NET_from_NEP(
-        NEP_corr, freqs, chan_effic, params["optical_coupling"]
-    )
+    NET = noise.NET_from_NEP(NEP, freqs, chan_effic, params.optical_coupling)
+    NET_corr = noise.NET_from_NEP(NEP_corr, freqs, chan_effic, params.optical_coupling)
 
     # Convert from CMB temperature to RJ temperature
     Trj_factor = trj_over_tcmb(freqs)
@@ -251,20 +328,15 @@ def compute_sensitivity(
     NET_corr_RJ = Trj_factor * NET_corr
 
     # Array NET: per-detector NET scaled by sqrt(n_det * yield)
-    NET_arr = params["NET_scale"] * noise.NET_arr(
-        NET, params["ndet"], params["det_yield"]
-    )
-    NET_arr_RJ = params["NET_scale"] * noise.NET_arr(
-        NET_RJ, params["ndet"], params["det_yield"]
-    )
+    ndet_f = jnp.asarray(params.ndet, dtype=jnp.float64)
+    NET_arr = params.NET_scale * noise.NET_arr(NET, ndet_f, params.det_yield)
+    NET_arr_RJ = params.NET_scale * noise.NET_arr(NET_RJ, ndet_f, params.det_yield)
 
     # Correlation factor and map depth
     corr_fact = NET_corr / NET
-    map_depth = noise.map_depth(
-        NET_arr, params["fsky"], params["obs_time"], params["obs_effic"]
-    )
+    map_depth = noise.map_depth(NET_arr, params.fsky, params.obs_time, params.obs_effic)
     map_depth_RJ = noise.map_depth(
-        NET_arr_RJ, params["fsky"], params["obs_time"], params["obs_effic"]
+        NET_arr_RJ, params.fsky, params.obs_time, params.obs_effic
     )
 
     # Broadcast P_sat, G, Flink to match NET shape for output consistency
@@ -273,33 +345,33 @@ def compute_sensitivity(
     G_out = G_val * to_shape
     Flink_out = flink * to_shape
 
-    return {
-        "effic": effic,
-        "opt_power": opt_power,
-        "P_sat": P_sat,
-        "G": G_out,
-        "Flink": Flink_out,
-        "tel_power": tel_power,
-        "sky_power": sky_power,
-        "tel_rj_temp": tel_rj_temp,
-        "sky_rj_temp": sky_rj_temp,
-        "elem_effic": elem_effic,
-        "elem_cumul_effic": elem_cumul_effic,
-        "elem_power_from_sky": elem_power_from_sky,
-        "elem_power_to_det": elem_power_to_det,
-        "NEP_bolo": NEP_bolo,
-        "NEP_read": NEP_read,
-        "NEP_ph": NEP_ph,
-        "NEP_ph_corr": NEP_ph_corr,
-        "NEP": NEP,
-        "NEP_corr": NEP_corr,
-        "NET": NET,
-        "NET_corr": NET_corr,
-        "NET_RJ": NET_RJ,
-        "NET_corr_RJ": NET_corr_RJ,
-        "NET_arr": NET_arr,
-        "NET_arr_RJ": NET_arr_RJ,
-        "corr_fact": corr_fact,
-        "map_depth": map_depth,
-        "map_depth_RJ": map_depth_RJ,
-    }
+    return SensitivityResult(
+        effic=effic,
+        opt_power=opt_power,
+        P_sat=P_sat,
+        G=G_out,
+        Flink=Flink_out,
+        tel_power=tel_power,
+        sky_power=sky_power,
+        tel_rj_temp=tel_rj_temp,
+        sky_rj_temp=sky_rj_temp,
+        elem_effic=elem_effic,
+        elem_cumul_effic=elem_cumul_effic,
+        elem_power_from_sky=elem_power_from_sky,
+        elem_power_to_det=elem_power_to_det,
+        NEP_bolo=NEP_bolo,
+        NEP_read=NEP_read,
+        NEP_ph=NEP_ph,
+        NEP_ph_corr=NEP_ph_corr,
+        NEP=NEP,
+        NEP_corr=NEP_corr,
+        NET=NET,
+        NET_corr=NET_corr,
+        NET_RJ=NET_RJ,
+        NET_corr_RJ=NET_corr_RJ,
+        NET_arr=NET_arr,
+        NET_arr_RJ=NET_arr_RJ,
+        corr_fact=corr_fact,
+        map_depth=map_depth,
+        map_depth_RJ=map_depth_RJ,
+    )

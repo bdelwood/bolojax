@@ -19,6 +19,7 @@ dependencies = [
     "pyyaml",
     "pydantic>=2.7",
     "jax[cpu]",
+    "equinox",
 ]
 
 [project.optional-dependencies]
