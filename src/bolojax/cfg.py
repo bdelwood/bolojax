@@ -35,10 +35,6 @@ def expand_dict(in_dict):
         o_dict[key].update(elem)
     return o_dict
 
-
-# ── ParamHolder ───────────────────────────────────────────────────────
-
-
 class ParamHolder:
     """Container for a parameter value with unit conversion."""
 
@@ -79,9 +75,6 @@ class ParamHolder:
             self.value = val
             return
         self.value = self.unit.inverse(val)
-
-
-# ── VariableHolder ────────────────────────────────────────────────────
 
 
 class VariableHolder(ParamHolder):
@@ -176,9 +169,6 @@ class VariableHolder(ParamHolder):
         return super().scaled
 
 
-# ── Pydantic annotation for Variable fields ───────────────────────────
-
-
 class _VarValidator:
     """Pydantic annotation that converts raw YAML values to VariableHolder."""
 
@@ -219,12 +209,8 @@ def Var(unit=None):
     return Annotated[VariableHolder, _VarValidator(unit)]
 
 
-# ── OutputHolder & OutputField (for Sensitivity) ──────────────────────
-
-
 class OutputHolder(ParamHolder):
     """ParamHolder for computed output values."""
-
 
 
 class OutputField:
@@ -279,9 +265,6 @@ class OutputField:
         val = getattr(obj, self.private_name).value
         val = val.reshape((val.shape[0], np.prod(val.shape[1:])))
         return StatsSummary(self.public_name, val, axis=1)
-
-
-# ── StatsSummary ──────────────────────────────────────────────────────
 
 
 class StatsSummary:

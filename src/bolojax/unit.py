@@ -52,8 +52,6 @@ class Unit:
         cls.to_SI_dict.update(a_dict)
 
 
-# ── bolojax custom units ──────────────────────────────────────────────
-
 _to_SI = {
     "GHz": 1.0e09,
     "mm": 1.0e-03,
