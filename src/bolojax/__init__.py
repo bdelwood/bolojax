@@ -34,9 +34,10 @@ from .models.params import Var as Var
 from .models.params import VariableHolder as VariableHolder
 from .models.pdf import ChoiceDist as ChoiceDist
 from .models.readout import Readout as Readout
-from .models.sky import AtmModel as AtmModel
+from .models.sky import AmAtm as AmAtm
+from .models.sky import AtmBackend as AtmBackend
 from .models.sky import Atmosphere as Atmosphere
-from .models.sky import CustomAtm as CustomAtm
+from .models.sky import AtmProfile as AtmProfile
 from .models.sky import Dust as Dust
 from .models.sky import Foreground as Foreground
 from .models.sky import Synchrotron as Synchrotron

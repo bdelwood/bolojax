@@ -19,7 +19,9 @@ universe:
     amplitude: 2.0E-4
     scale_frequency: 30.
   atmosphere:
-    atm_model_file: atm_20201217.hdf5
+    amc_file: SPole_annual_median_MERRA2_2007-2016.amc
+    amc_args: [0, 300, zenith, pwv_scale]
+    profile_pwv_mm: 0.425
 
 instrument:
   site: Atacama

@@ -14,12 +14,13 @@ classifiers = [
 dependencies = [
     "numpy>=2",
     "scipy",
-    "h5py",
     "astropy",
     "pyyaml",
     "pydantic>=2.7",
     "jax[cpu]",
     "equinox",
+    "am-python",
+    "joblib",
 ]
 
 [project.optional-dependencies]

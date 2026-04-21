@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections import OrderedDict
 from functools import cached_property
+from pathlib import Path
 from typing import Any, ClassVar
 
-import h5py as hp
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
@@ -16,72 +17,183 @@ from .params import Var
 from .utils import cfg_path, is_not_none
 
 GHz_to_Hz = 1.0e09
-m_to_mm = 1.0e03
-mm_to_um = 1.0e03
 
 
-def interp_spectra(freqs, freq_grid, vals):
-    """Interpolate a spectrum."""
-    freq_grid = freq_grid * GHz_to_Hz
-    return np.interp(freqs, freq_grid, vals)
+def _interp_to_hz(freqs_hz, freq_ghz, vals):
+    """Interpolate values from a GHz grid onto an Hz grid."""
+    return np.interp(freqs_hz, freq_ghz * GHz_to_Hz, vals)
 
 
-class AtmModel:
-    """Atmospheric model using tabulated values."""
+class AtmBackend(ABC):
+    """Atmosphere model base class.
 
-    def __init__(self, fname, site):
-        self._file = hp.File(fname, "r")
-        self._data = self._file[site]
+    Subclasses implement :meth:`raw_spectra` to return raw
+    ``(freq_ghz, temp, trans)`` arrays for a single condition.
+    The base class handles interpolation and batching.
+    """
 
-    @staticmethod
-    def get_keys(pwv, elev):
-        return [
-            f"{int(round(pwv_ * m_to_mm, 1) * mm_to_um)},{int(round(elev_, 0))}"
-            for pwv_, elev_ in np.broadcast(pwv, elev)
-        ]
+    @abstractmethod
+    def raw_spectra(
+        self, freqs: np.ndarray, pwv: float, elevation: float
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (freq_ghz, brightness_temp_K, transmission) arrays."""
 
-    def temp(self, keys, freqs):
-        return np.array(
-            [
-                interp_spectra(freqs, self._data[key_][0], self._data[key_][2])
-                for key_ in keys
-            ]
+    def temp(self, freqs: np.ndarray, pwv: float, elevation: float) -> np.ndarray:
+        """Brightness temperature [K] at given freqs [Hz], pwv [m], elevation [deg]."""
+        freq_ghz, temp, _ = self.raw_spectra(freqs, pwv, elevation)
+        return _interp_to_hz(freqs, freq_ghz, temp)
+
+    def trans(self, freqs: np.ndarray, pwv: float, elevation: float) -> np.ndarray:
+        """Transmission [0-1] at given freqs [Hz], pwv [m], elevation [deg]."""
+        freq_ghz, _, trans = self.raw_spectra(freqs, pwv, elevation)
+        return _interp_to_hz(freqs, freq_ghz, trans)
+
+    def batch(
+        self, freqs: np.ndarray, pwv: np.ndarray, elevation: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluate temp and trans for arrays of (pwv, elevation).
+
+        Returns (temp, trans) each of shape (n_samples, n_freq).
+        """
+        temps, transs = [], []
+        for p, e in np.broadcast(pwv, elevation):
+            fg, t, x = self.raw_spectra(freqs, float(p), float(e))
+            temps.append(_interp_to_hz(freqs, fg, t))
+            transs.append(_interp_to_hz(freqs, fg, x))
+        return np.array(temps), np.array(transs)
+
+
+class AtmProfile(AtmBackend):
+    """Single fixed atmosphere profile from a text file."""
+
+    def __init__(self, path):
+        self.freq_ghz, self.temps, self.transmission = np.loadtxt(
+            path, unpack=True, usecols=[0, 2, 3], dtype=np.float64
         )
 
-    def trans(self, keys, freqs):
-        return np.array(
-            [
-                interp_spectra(freqs, self._data[key_][0], self._data[key_][3])
-                for key_ in keys
-            ]
+    def raw_spectra(self, freqs, pwv, elevation):  # noqa: ARG002
+        return self.freq_ghz, self.temps, self.transmission
+
+
+def _compute_am_grid(path, amc_args, profile_pwv_mm, pwv_mm, elevation):
+    """Compute a (PWV, elevation) atmosphere grid via am.ModelGrid.
+
+    Module-level function for ``joblib.Memory`` caching.
+    Returns ``(freq_ghz, tb, tx)`` with shapes ``(n_pwv, n_elev, n_freq)``.
+    """
+    import am  # noqa: PLC0415
+    import xarray as xr  # noqa: PLC0415
+
+    params = xr.Dataset(coords={
+        "pwv_mm": np.array(pwv_mm, dtype=float),
+        "elevation": np.array(elevation, dtype=float),
+    })
+
+    def args_fn(pwv_mm, elevation):
+        subs = {
+            "zenith": 90.0 - elevation,
+            "pwv_scale": max(pwv_mm / profile_pwv_mm, 1e-6) if pwv_mm > 0 else 1e-6,
+        }
+        return [subs.get(t, t) for t in amc_args]
+
+    result = am.ModelGrid(path, params, args_fn).compute()
+    freq_ghz = result.coords["frequency"].values
+    tb = result["tb_planck"].values if "tb_planck" in result else result["tb_rj"].values
+    return freq_ghz, tb, result["transmittance"].values
+
+
+def _make_grid(values, step):
+    """Build a regular grid covering the range of *values* at *step* spacing."""
+    lo = step * np.floor(np.min(values) / step)
+    hi = step * np.ceil(np.max(values) / step)
+    return list(np.arange(lo, hi + step / 2, step).round(6))
+
+
+class AmAtm(AtmBackend):
+    """Atmosphere via am-python with automatic disk caching.
+
+    On first use, computes a grid of atmosphere profiles over
+    (PWV, elevation) using ``am.ModelGrid`` in parallel and caches
+    the result to disk via ``joblib``.  Subsequent calls load from
+    cache instantly.
+
+    The grid extent is either set explicitly (``pwv_mm``, ``elevation``)
+    or inferred lazily from the sampled conditions via
+    :meth:`ensure_grid`.
+    """
+
+    def __init__(
+        self,
+        path,
+        amc_args,
+        profile_pwv_mm=0.425,
+        pwv_mm=None,
+        elevation=None,
+        cache_dir=None,
+    ):
+        self.path = path
+        self.amc_args = amc_args
+        self.profile_pwv_mm = profile_pwv_mm
+        self.pwv_mm = pwv_mm
+        self.elevation = elevation
+
+        from joblib import Memory  # noqa: PLC0415
+
+        cache = Path(cache_dir) if cache_dir else Path(path).parent / ".bolojax_cache"
+        self._compute = Memory(cache, verbose=0).cache(_compute_am_grid)
+        self._freq_ghz = None
+        self._tb_grid = None
+        self._tx_grid = None
+
+    def ensure_grid(self, pwv_m=None, elevation=None, pwv_step_mm=0.1, elev_step=1.0):
+        """Ensure the grid is computed, inferring extent from sampled values if needed."""
+        if self._freq_ghz is not None:
+            return
+        if self.pwv_mm is None:
+            if pwv_m is None:
+                msg = "pwv_mm grid not configured and no sampled values to infer from"
+                raise ValueError(msg)
+            self.pwv_mm = _make_grid(np.atleast_1d(pwv_m) * 1e3, pwv_step_mm)
+        if self.elevation is None:
+            if elevation is None:
+                msg = "elevation grid not configured and no sampled values to infer from"
+                raise ValueError(msg)
+            self.elevation = _make_grid(np.atleast_1d(elevation), elev_step)
+        self._freq_ghz, self._tb_grid, self._tx_grid = self._compute(
+            self.path, self.amc_args, self.profile_pwv_mm,
+            self.pwv_mm, self.elevation,
         )
 
+    def raw_spectra(self, freqs, pwv, elevation):  # noqa: ARG002
+        """Look up nearest grid point. *pwv* is in meters (SI)."""
+        i_pwv = np.argmin(np.abs(np.array(self.pwv_mm) - pwv * 1e3))
+        i_elev = np.argmin(np.abs(np.array(self.elevation) - elevation))
+        return self._freq_ghz, self._tb_grid[i_pwv, i_elev], self._tx_grid[i_pwv, i_elev]
 
-class CustomAtm:
-    """Atmospheric model using custom value from a txt file."""
-
-    def __init__(self, fname):
-        self._freqs, self._temps, self._trans = np.loadtxt(
-            fname, unpack=True, usecols=[0, 2, 3], dtype=np.float64
-        )
-
-    def temp(self, freqs):
-        return interp_spectra(freqs, self._freqs, self._temps)
-
-    def trans(self, freqs):
-        return interp_spectra(freqs, self._freqs, self._trans)
+    def batch(self, freqs, pwv, elevation):
+        """Ensure grid covers all queried points, then delegate to base."""
+        self.ensure_grid(pwv_m=pwv, elevation=elevation)
+        return super().batch(freqs, pwv, elevation)
 
 
 class Atmosphere(BaseModel):
-    """Atmosphere model."""
+    """Atmosphere model.
+
+    The primary backend is ``AmAtm``, which computes atmosphere profiles
+    from an ``.amc`` configuration file using am-python and caches the
+    results to disk.  A fixed-profile text file can be used as a
+    fallback via ``custom_atm_file`` on the Instrument.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
-    atm_model_file: str | None = None
+    amc_file: str | None = None
+    amc_args: list | None = None
+    profile_pwv_mm: float = 0.425
 
-    _atm_model: Any = PrivateAttr(default=None)
     _telescope: Any = PrivateAttr(default=None)
-    _sampled_keys: Any = PrivateAttr(default=None)
+    _sampled_pwv: Any = PrivateAttr(default=None)
+    _sampled_elev: Any = PrivateAttr(default=None)
     _nsamples: int = PrivateAttr(default=1)
 
     def set_telescope(self, value):
@@ -90,47 +202,39 @@ class Atmosphere(BaseModel):
 
     @cached_property
     def cached_model(self):
-        """Cache the Atmosphere model."""
+        """Cache the Atmosphere model backend."""
         if is_not_none(self._telescope.custom_atm_file):
-            return CustomAtm(cfg_path(self._telescope.custom_atm_file))
-        if is_not_none(self.atm_model_file):
-            return AtmModel(cfg_path(self.atm_model_file), self._telescope.site)
+            return AtmProfile(cfg_path(self._telescope.custom_atm_file))
+        if is_not_none(self.amc_file):
+            if self.amc_args is None:
+                msg = "amc_args must be specified when using amc_file"
+                raise ValueError(msg)
+            return AmAtm(
+                cfg_path(self.amc_file),
+                self.amc_args,
+                profile_pwv_mm=self.profile_pwv_mm,
+            )
         return None
 
     def sample(self, nsamples):
-        """Sample the atmosphere."""
-        model = self.cached_model
-        if isinstance(model, CustomAtm):
-            self._sampled_keys = None
-            self._nsamples = nsamples
-            return
+        """Sample PWV and elevation for atmosphere evaluation."""
         self._telescope.pwv.sample(nsamples)
         self._telescope.elevation.sample(nsamples)
-        self._sampled_keys = model.get_keys(
-            1e-3 * np.atleast_1d(self._telescope.pwv()),
-            np.atleast_1d(self._telescope.elevation()),
-        )
+        self._sampled_pwv = 1e-3 * np.atleast_1d(self._telescope.pwv())  # mm → m
+        self._sampled_elev = np.atleast_1d(self._telescope.elevation())
         self._nsamples = max(nsamples, 1)
 
     def temp(self, freqs):
-        """Get sampled temperatures."""
-        model = self.cached_model
-        nfreqs = len(freqs)
-        out_shape = (max(self._nsamples, 1), 1, nfreqs)
-        if self._sampled_keys is None:
-            ones = np.ones((max(self._nsamples, 1), 1, 1))
-            return (ones * model.temp(freqs)).reshape(out_shape)
-        return model.temp(self._sampled_keys, freqs).reshape(out_shape)
+        """Brightness temperature [K] for sampled conditions."""
+        nsamp = max(self._nsamples, 1)
+        temps, _ = self.cached_model.batch(freqs, self._sampled_pwv, self._sampled_elev)
+        return temps.reshape((nsamp, 1, len(freqs)))
 
     def trans(self, freqs):
-        """Get sampled transmission coefs."""
-        model = self.cached_model
-        nfreqs = len(freqs)
-        out_shape = (max(self._nsamples, 1), 1, nfreqs)
-        if self._sampled_keys is None:
-            ones = np.ones((max(self._nsamples, 1), 1, 1))
-            return (ones * model.trans(freqs)).reshape(out_shape)
-        return model.trans(self._sampled_keys, freqs).reshape(out_shape)
+        """Transmission [0-1] for sampled conditions."""
+        nsamp = max(self._nsamples, 1)
+        _, transs = self.cached_model.batch(freqs, self._sampled_pwv, self._sampled_elev)
+        return transs.reshape((nsamp, 1, len(freqs)))
 
 
 class Foreground(BaseModel):
