@@ -50,7 +50,10 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
     response_factor: Var() = None
     nyquist_inductance: Var() = None
 
-    noise_calc: ClassVar[noise.Noise] = noise.Noise()
+    @property
+    def noise_calc(self):
+        """Return the noise calculator from the parent camera."""
+        return self._camera.noise_calc
 
     # Private runtime state
     _optical_effic: Any = PrivateAttr(default=None)

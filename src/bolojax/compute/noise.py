@@ -1,12 +1,10 @@
 """Computations for noise estimation."""
 
-import pickle as pk
-from pathlib import Path
-
 import jax.numpy as jnp
 import numpy as np
 
 from . import physics
+from .beam_correlation import compute_corr_curves
 
 
 def Flink(n, Tb, Tc):
@@ -156,57 +154,33 @@ class Noise:  # pylint: disable=too-many-instance-attributes
     """
     Noise object calculates NEP, NET, mapping speed, and sensitivity.
 
-    Loads pre-computed Bose white-noise correlation factors from pickle
-    files (originally computed by Charlie Hill for BoloCalc,
-    arXiv:1806.04316) and uses them to calculate pixel-to-pixel photon
-    noise correlations.
+    Computes Bose white-noise correlation factors following Hill & Kusaka,
+    Appl. Opt. 63, 1654 (2024), arXiv:2309.01153.  The corr_facts method
+    evaluates the array-averaged HBT coefficient (Eq. 67) which enters the
+    array noise variance as a (1 + gamma^(2)) multiplier on the wave noise
+    term (Eq. 68).
 
     Args:
-    phys (src.Physics): parent Physics object
-
-    Attributes set dynamically from pkl files:
-    _p_c_apert, _c_apert, _p_c_stop, _c_stop,
-    _p_i_apert, _i_apert, _p_i_stop, _i_stop
+        beam_preset: name of a beam correlation preset ("bolocalc",
+            "trunc_gauss", "he11") or a dict with beam model parameters.
+            Defaults to "bolocalc".
     """
 
-    _p_c_apert: np.ndarray
-    _c_apert: np.ndarray
-    _p_c_stop: np.ndarray
-    _c_stop: np.ndarray
-    _p_i_apert: np.ndarray
-    _i_apert: np.ndarray
-    _p_i_stop: np.ndarray
-    _i_stop: np.ndarray
     _det_p: np.ndarray
+    _c_apert: np.ndarray
+    _c_stop: np.ndarray
 
-    """
-    Args:
-    phys (src.Physics): parent Physics object
+    def __init__(self, beam_preset="bolocalc"):
 
-    Parents:
-    phys (src.Physics): Physics object
-    """
-
-    def __init__(self):
         # Aperture stop names
         self._ap_names = ["APERT", "STOP", "LYOT"]
 
-        # Correlation files (pre-computed Bose white-noise factors, arXiv:1806.04316)
-        corr_dir = Path(__file__).parent / "PKL"
-        for name, attrs in [
-            ("coherentApertCorr.pkl", ("_p_c_apert", "_c_apert")),
-            ("coherentStopCorr.pkl", ("_p_c_stop", "_c_stop")),
-            ("incoherentApertCorr.pkl", ("_p_i_apert", "_i_apert")),
-            ("incoherentStopCorr.pkl", ("_p_i_stop", "_i_stop")),
-        ]:
-            path = corr_dir / name
-            with path.open("rb") as f:
-                p, c = pk.load(f, encoding="latin1")
-            setattr(self, attrs[0], p)
-            setattr(self, attrs[1], c)
+        # Compute correlation curves from beam model
+        p_grid, gamma_apert, gamma_stop = compute_corr_curves(beam_preset)
+        self._det_p = p_grid
+        self._c_apert = gamma_apert
+        self._c_stop = gamma_stop
 
-        # Detector pitch array
-        self._det_p = self._p_c_apert
         # Geometric pitch factor
         self._geo_fact = 6  # Hex packing; 6 for temperature. More complicated for polarization, not a simple factor.
 
