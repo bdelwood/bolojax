@@ -9,12 +9,13 @@ from typing import Any
 from astropy.table import vstack
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from .camera import build_cameras
-from .params import Var
-from bolojax.io.tables import TableDict
-from .optics import build_optics
-from .readout import Readout
 from bolojax.io.sensitivity import Sensitivity
+from bolojax.io.tables import TableDict
+
+from .camera import build_cameras
+from .optics import build_optics
+from .params import Var
+from .readout import Readout
 
 
 class Instrument(BaseModel):

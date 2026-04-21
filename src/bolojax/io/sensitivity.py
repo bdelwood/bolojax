@@ -13,8 +13,8 @@ from typing import ClassVar
 import jax.numpy as jnp
 import numpy as np
 
-from bolojax.models.params import OutputField
 from bolojax.compute.sensitivity import BoloParams, OpticsState, compute_sensitivity
+from bolojax.models.params import OutputField
 
 
 def _bcast_list(array_list):
@@ -24,7 +24,88 @@ def _bcast_list(array_list):
     return jnp.stack(broadcasted, axis=0)
 
 
-NSKY_SRC = 4
+def build_params(channel):
+    """Extract JAX pytrees from a configured Channel.
+
+    Call after ``instrument.eval_sky()`` and ``instrument.eval_instrument()``
+    have populated the channel's sky and optical chain data.
+
+    Returns:
+        (OpticsState, BoloParams) ready for :func:`compute_sensitivity`.
+    """
+    camera = channel.camera
+    instrument = camera.instrument
+
+    freqs = jnp.asarray(channel.freqs, dtype=jnp.float64)
+    bandwidth = float(channel.bandwidth)
+
+    temps_list = channel.sky_temps + channel.optical_temps + [channel._det_temp]
+    temps = _bcast_list(temps_list)
+
+    # Buffer both sides of the transmission array, because we will be taking
+    # cumulative products that are offset by one (i.e., we want the product of
+    # all the elements downstream of a particular element)
+    trans_list = [
+        0.0,
+        *channel.sky_effic,
+        *channel.optical_effic,
+        channel._det_effic,
+        1.0,
+    ]
+    trans = _bcast_list(trans_list)
+
+    emiss_list = [*channel.sky_emiss, *channel.optical_emiss, channel._det_emiss]
+    emiss = _bcast_list(emiss_list)
+
+    # Normalize emiss shape to 4D for physics.bb_pow_spec broadcasting
+    if emiss.ndim == 2:
+        emiss = emiss.reshape((emiss.shape[0], 1, 1, emiss.shape[1]))
+    elif emiss.ndim == 3:
+        emiss = emiss.reshape((emiss.shape[0], 1, emiss.shape[1], emiss.shape[2]))
+
+    # Element names (for correlation factor computation)
+    elem_names = channel.sky_names + list(camera.optics.keys()) + ["detector"]
+
+    # Pre-compute Bose white-noise correlation factors
+    ap_names = list(instrument.optics.apertureStops.keys())
+    det_pitch = channel.pixel_size.SI / (
+        camera.f_number.SI * (299792458.0 / channel.band_center.SI)
+    )
+    corr_factors = jnp.asarray(
+        channel.noise_calc.corr_facts(elem_names, float(det_pitch), ap_names)
+    )
+
+    optics = OpticsState(
+        freqs=freqs,
+        bandwidth=bandwidth,
+        temps=temps,
+        trans=trans,
+        emiss=emiss,
+        corr_factors=corr_factors,
+    )
+
+    params = BoloParams(
+        Tc=jnp.asarray(channel.Tc.SI, dtype=jnp.float64),
+        bath_temp=jnp.asarray(camera.bath_temperature(), dtype=jnp.float64),
+        carrier_index=jnp.asarray(channel.carrier_index.SI, dtype=jnp.float64),
+        psat=jnp.asarray(channel.psat.SI, dtype=jnp.float64),
+        psat_factor=jnp.asarray(channel.psat_factor.SI, dtype=jnp.float64),
+        G=jnp.asarray(channel.G.SI, dtype=jnp.float64),
+        Flink=jnp.asarray(channel.Flink.SI, dtype=jnp.float64),
+        optical_coupling=jnp.asarray(camera.optical_coupling(), dtype=jnp.float64),
+        read_frac=jnp.asarray(channel.read_frac(), dtype=jnp.float64),
+        squid_nei=jnp.asarray(channel.squid_nei.SI, dtype=jnp.float64),
+        bolo_R=jnp.asarray(channel.bolo_resistance.SI, dtype=jnp.float64),
+        response_factor=jnp.asarray(channel.response_factor.SI, dtype=jnp.float64),
+        NET_scale=jnp.asarray(instrument.NET(), dtype=jnp.float64),
+        ndet=int(channel.ndet),
+        det_yield=jnp.asarray(channel.Yield(), dtype=jnp.float64),
+        fsky=jnp.asarray(instrument.sky_fraction(), dtype=jnp.float64),
+        obs_time=jnp.asarray(instrument.obs_time(), dtype=jnp.float64),
+        obs_effic=jnp.asarray(instrument.obs_effic(), dtype=jnp.float64),
+    )
+
+    return optics, params, elem_names
 
 
 class Sensitivity:  # pylint: disable=too-many-instance-attributes
@@ -112,82 +193,8 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         self._summary = None
         self._optical_output = None
 
-        # Extract inputs from channel/instrument
-
-        freqs = jnp.asarray(channel.freqs, dtype=jnp.float64)
-        bandwidth = float(channel.bandwidth)
-
-        temps_list = channel.sky_temps + channel.optical_temps + [channel._det_temp]
-        temps = _bcast_list(temps_list)
-
-        # Buffer both sides of the transmission array, because we will be taking cumulative products that are offset by one
-        # (i.e., we want the product of all the elements downstream of a particular element)
-        trans_list = [
-            0.0,
-            *channel.sky_effic,
-            *channel.optical_effic,
-            channel._det_effic,
-            1.0,
-        ]
-        trans = _bcast_list(trans_list)
-
-        emiss_list = [*channel.sky_emiss, *channel.optical_emiss, channel._det_emiss]
-        emiss = _bcast_list(emiss_list)
-
-        # Normalize emiss shape to 4D for physics.bb_pow_spec broadcasting
-        if emiss.ndim == 2:
-            emiss = emiss.reshape((emiss.shape[0], 1, 1, emiss.shape[1]))
-        elif emiss.ndim == 3:
-            emiss = emiss.reshape((emiss.shape[0], 1, emiss.shape[1], emiss.shape[2]))
-
-        # Element names (for reporting, not used in pure computation)
-        self._elem_names = (
-            channel.sky_names + list(self._camera.optics.keys()) + ["detector"]
-        )
-
-        # Pre-compute correlation factors
-        # Python loop over element names
-        ap_names = list(self._instrument.optics.apertureStops.keys())
-        # det_pitch in f-lambda units: pixel_size / (f_number * lambda)
-        det_pitch = channel.pixel_size.SI / (
-            self._camera.f_number.SI * (299792458.0 / channel.band_center.SI)
-        )
-        corr_factors = jnp.asarray(
-            channel.noise_calc.corr_facts(self._elem_names, float(det_pitch), ap_names)
-        )
-
-        # Build equinox modules for the pure function
-        optics = OpticsState(
-            freqs=freqs,
-            bandwidth=bandwidth,
-            temps=temps,
-            trans=trans,
-            emiss=emiss,
-            corr_factors=corr_factors,
-        )
-
-        params = BoloParams(
-            Tc=jnp.asarray(channel.Tc.SI, dtype=jnp.float64),
-            bath_temp=jnp.asarray(self._camera.bath_temperature(), dtype=jnp.float64),
-            carrier_index=jnp.asarray(channel.carrier_index.SI, dtype=jnp.float64),
-            psat=jnp.asarray(channel.psat.SI, dtype=jnp.float64),
-            psat_factor=jnp.asarray(channel.psat_factor.SI, dtype=jnp.float64),
-            G=jnp.asarray(channel.G.SI, dtype=jnp.float64),
-            Flink=jnp.asarray(channel.Flink.SI, dtype=jnp.float64),
-            optical_coupling=jnp.asarray(
-                self._camera.optical_coupling(), dtype=jnp.float64
-            ),
-            read_frac=jnp.asarray(channel.read_frac(), dtype=jnp.float64),
-            squid_nei=jnp.asarray(channel.squid_nei.SI, dtype=jnp.float64),
-            bolo_R=jnp.asarray(channel.bolo_resistance.SI, dtype=jnp.float64),
-            response_factor=jnp.asarray(channel.response_factor.SI, dtype=jnp.float64),
-            NET_scale=jnp.asarray(self._instrument.NET(), dtype=jnp.float64),
-            ndet=int(channel.ndet),
-            det_yield=jnp.asarray(channel.Yield(), dtype=jnp.float64),
-            fsky=jnp.asarray(self._instrument.sky_fraction(), dtype=jnp.float64),
-            obs_time=jnp.asarray(self._instrument.obs_time(), dtype=jnp.float64),
-            obs_effic=jnp.asarray(self._instrument.obs_effic(), dtype=jnp.float64),
-        )
+        # Extract JAX pytrees from the configured channel
+        optics, params, self._elem_names = build_params(channel)
 
         # Call the pure jax computation
         results = compute_sensitivity(optics, params)

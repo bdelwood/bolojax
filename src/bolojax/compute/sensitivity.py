@@ -111,7 +111,8 @@ def resolve_psat(psat, psat_factor, opt_pow):
     """
     is_explicit = jnp.isfinite(psat)
     safe_psat = jnp.where(is_explicit, psat, 1.0)
-    fallback = opt_pow * psat_factor
+    safe_factor = jnp.where(is_explicit, 1.0, psat_factor)
+    fallback = opt_pow * safe_factor
     return jnp.where(is_explicit, safe_psat, fallback)
 
 
@@ -159,7 +160,8 @@ def compute_read_nep(
     full_read_nep = safe_nei / responsivity
 
     # Fallback when squid_nei or bolo_R not provided
-    fallback_nep = jnp.sqrt((1 + read_frac) ** 2 - 1.0) * jnp.sqrt(
+    safe_read_frac = jnp.where(inputs_valid, 0.0, read_frac)
+    fallback_nep = jnp.sqrt((1 + safe_read_frac) ** 2 - 1.0) * jnp.sqrt(
         NEP_bolo * NEP_bolo + NEP_ph * NEP_ph
     )
 

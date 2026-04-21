@@ -7,8 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from .params import Var, expand_dict
 from .channel import Channel
+from .params import Var, expand_dict
 
 
 class Camera(BaseModel):

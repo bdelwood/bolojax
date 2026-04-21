@@ -9,6 +9,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from bolojax.compute import physics
+
 from .params import Var, expand_dict
 from .utils import is_not_none
 

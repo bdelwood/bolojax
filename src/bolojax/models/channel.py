@@ -8,6 +8,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from bolojax.compute import noise, physics
+
 from .params import Var
 from .sky import Universe
 from .utils import is_not_none
@@ -67,6 +68,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
     _fhi: Any = PrivateAttr(default=None)
     _freq_mask: Any = PrivateAttr(default=None)
     _bandwidth: Any = PrivateAttr(default=None)
+    _band_width_factor: float = PrivateAttr(default=1.0)
 
     @property
     def bandwidth(self):
@@ -199,7 +201,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         )
 
     def compute_evaluation_freqs(self, freq_resol=None):
-        """Compute and return the evaluation frequencies."""
+        """Compute and return the evaluation frequecies."""
         self.bandwidth = self.band_center.SI * self.fractional_bandwidth.SI
         if freq_resol is None:
             freq_resol = 0.05 * self.bandwidth
@@ -207,16 +209,25 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             freq_resol = freq_resol * 1e9
         self._flo = self.band_center.SI - 0.5 * self.bandwidth
         self._fhi = self.band_center.SI + 0.5 * self.bandwidth
-        freq_step = np.ceil(self.bandwidth / freq_resol).astype(int)
 
-        self._freqs = np.linspace(self._flo, self._fhi, freq_step + 1)
+        # Grid may extend beyond band edges when band_width_factor > 1
+        # included to match BoloCalc's behavior
+        # (uses 1.3, ie takes the grid 30% beyond the band edges)
+        half = self._band_width_factor * 0.5 * self.bandwidth
+        grid_lo = self.band_center.SI - half
+        grid_hi = self.band_center.SI + half
+        grid_width = grid_hi - grid_lo
+        freq_step = np.ceil(grid_width / freq_resol).astype(int)
+
+        self._freqs = np.linspace(grid_lo, grid_hi, freq_step + 1)
+        self._freq_mask = (self._freqs >= self._flo) & (self._freqs <= self._fhi)
         band_mean_response = self.band_response.sample(0, self._freqs)
         if np.isscalar(band_mean_response):
             return self._freqs
         self._flo, self._fhi = physics.band_edges(self._freqs, band_mean_response)
         self.bandwidth = self._fhi - self._flo
-        freq_mask = np.bitwise_and(self._freqs >= self._flo, self._freqs <= self._fhi)
-        self._freqs = self._freqs[freq_mask]
+        self._freq_mask = (self._freqs >= self._flo) & (self._freqs <= self._fhi)
+        self._freqs = self._freqs[self._freq_mask]
         return self._freqs
 
     def eval_optical_chain(self, nsample=0, freq_resol=None):
@@ -236,7 +247,10 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         self._freqs = self.compute_evaluation_freqs(freq_resol)
         self.band_response.sample(nsample, self._freqs)
         self.det_eff.sample(nsample)
-        self._det_effic = self.band_response.SI * self.det_eff.SI
+        det_eff = self.band_response.SI * self.det_eff.SI
+        if self._band_width_factor > 1.0:
+            det_eff = det_eff * self._freq_mask.astype(float)
+        self._det_effic = det_eff
         self._det_emiss = 0.0
         self._det_temp = self._camera.bath_temperature()
 
