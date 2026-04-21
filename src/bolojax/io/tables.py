@@ -35,7 +35,7 @@ def append_guard_row(data_dict, col_dict):
 
     Parameters
     ----------
-    data_dict : `dict'
+    data_dict : `dict`
         The dictionary we are filling
     col_dict
         The dictionary with the guard values

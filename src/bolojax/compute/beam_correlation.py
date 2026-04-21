@@ -7,8 +7,8 @@ Appl. Opt. 63, 1654 (2024), arXiv:2309.01153.
 
 The aperture coherence gamma^np_ap,ij (Hill Eq. 53) and stop coherence
 gamma^np_stop,ij (Eq. 56) are computed via a Hankel transform of the beam
-illumination intensity |G(r)|^2 (Eq. 54).  The HBT intensity coherence
-|gamma|^2 (Eq. 17) enters the array noise covariance (Eq. 68) as a
+illumination intensity ``|G(r)|^2`` (Eq. 54).  The HBT intensity coherence
+``|gamma|^2`` (Eq. 17) enters the array noise covariance (Eq. 68) as a
 multiplicative factor on the Bose (wave) noise term.
 
 For the "bolocalc" preset the poly_taper beam parameters were obtained by
@@ -90,18 +90,18 @@ def beam_coherence(p, beam_func, r_min=0.0, r_max=1.0, n_pts=10000):
     """Compute amplitude coherence gamma(p) via Hankel transform.
 
     Evaluates the normalized zeroth-order Hankel transform of the beam
-    intensity pattern |G(r)|^2 over the radial range [r_min, r_max],
+    intensity pattern ``|G(r)|^2`` over the radial range [r_min, r_max],
     implementing the circularly-symmetric form of Hill Eq. 53 (aperture)
     and Eq. 56 (stop):
 
-        gamma(p) = (1/eta) * integral_{r_min}^{r_max} |G(r)|^2 J_0(2*pi*p*r) 2*pi*r dr
+        gamma(p) = (1/eta) * integral_{r_min}^{r_max} ``|G(r)|^2`` J_0(2*pi*p*r) 2*pi*r dr
 
     where eta is the integrated power in the region. The flat-illumination
     limit recovers the Bessel/jinc result of Eq. 55.
 
     Args:
         p: detector separations in F*lambda units (array)
-        beam_func: callable returning |G(r)|^2 given r in units of D_ap/2
+        beam_func: callable returning ``|G(r)|^2`` given r in units of D_ap/2
         r_min: inner integration bound (0 for aperture, R_ap for stop)
         r_max: outer integration bound
         n_pts: number of integration points
@@ -166,7 +166,7 @@ def compute_corr_curves(preset="bolocalc", p_grid=None):
     """Compute aperture and stop coherence curves for a given preset.
 
     Returns the amplitude coherence gamma_ap (Hill Eq. 53) and intensity
-    coherence |gamma_stop|^2 (Eq. 56, squared per Eq. 17) on a pitch grid.
+    coherence ``|gamma_stop|^2`` (Eq. 56, squared per Eq. 17) on a pitch grid.
     For physically motivated presets these are the two terms in the
     decomposition of the total mutual intensity (Eq. 51).
 

@@ -1,5 +1,23 @@
 # bolojax
 
+<!-- readme-include-start -->
+
+[![CI status][ci-img]][ci-url]
+[![Documentation][doc-img]][doc-url]
+[![PyPI version][pypi-img]][pypi-url]
+[![Python][python-img]][pypi-url]
+[![License][license-img]][license-url]
+
+[ci-img]: https://img.shields.io/github/actions/workflow/status/bdelwood/bolojax/ci.yaml?branch=master&style=flat-square&label=CI
+[ci-url]: https://github.com/bdelwood/bolojax/actions/workflows/ci.yaml
+[doc-img]: https://img.shields.io/badge/docs-bolojax-4d76ae?style=flat-square
+[doc-url]: https://bdelwood.github.io/bolojax/
+[pypi-img]: https://img.shields.io/pypi/v/bolojax?style=flat-square
+[python-img]: https://img.shields.io/pypi/pyversions/bolojax?style=flat-square
+[pypi-url]: https://pypi.org/project/bolojax/
+[license-img]: https://img.shields.io/badge/license-BSD--3--Clause-yellow?style=flat-square
+[license-url]: https://github.com/bdelwood/bolojax/blob/master/LICENSE
+
 Bolometric sensitivity calculator for CMB instruments, built on [JAX](https://github.com/jax-ml/jax).
 
 bolojax models the full radiative transfer chain of a CMB telescope and computes noise-equivalent temperature (NET), noise-equivalent power (NEP), and mapping speed. Because the compute path is written in pure JAX, the entire forward model is automatically differentiable, enabling gradient-based fitting, Fisher forecasting, MCMC sampling, and potentially inverse design.
@@ -119,4 +137,4 @@ new_results = bolojax.compute_sensitivity(optics, new_params)
 
 ## License
 
-BSD 3-Clause. See [LICENSE](LICENSE) for details.
+BSD 3-Clause. See [LICENSE](https://github.com/bdelwood/bolojax/blob/master/LICENSE) for details.

@@ -21,6 +21,7 @@ dependencies = [
     "equinox",
     "am-python",
     "joblib",
+    "h5py>=3.16.0",
 ]
 
 [project.optional-dependencies]
@@ -29,13 +30,26 @@ gpu = ["jax[cuda13]"]
 [project.scripts]
 bolojax = "bolojax.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/bdelwood/bolojax"
+Repository = "https://github.com/bdelwood/bolojax"
+
 [dependency-groups]
 dev = [
+    # Testing
     "pytest>=8",
     "coverage[toml]>=7",
+    # Linting & type checking
     "ruff>=0.9",
     "pre-commit>=3",
     "pyrefly>=0.58",
+    # Docs
+    "sphinx>=7",
+    "furo>=2024",
+    "myst-parser>=3",
+    "sphinx-autoapi>=3",
+    "sphinx-math-dollar>=1.2",
+    "sphinx-autobuild>=2024",
 ]
 
 [build-system]
@@ -136,6 +150,9 @@ indent-style = "space"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.codespell]
+skip = "*.npy,uv.lock"
 
 [tool.pyrefly]
 project-excludes = ["**/.venv*"]
