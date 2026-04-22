@@ -5,6 +5,7 @@ author = "Brodi Elwood"
 
 extensions = [
     "autoapi.extension",
+    "sphinxcontrib.autodoc_pydantic",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
@@ -38,6 +39,10 @@ intersphinx_mapping = {
     "jax": ("https://jax.readthedocs.io/en/latest", None),
     "pydantic": ("https://docs.pydantic.dev/latest", None),
 }
+
+# autoapi generates ambiguous cross-refs for the 'type' discriminator field
+# shared across OpticalElement subclasses
+suppress_warnings = ["ref.python"]
 
 html_theme = "furo"
 html_title = "bolojax"

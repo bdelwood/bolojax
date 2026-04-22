@@ -26,6 +26,10 @@ dependencies = [
     "xarray",
 ]
 
+[tool.uv.sources]
+# pinned to fork until upstream merges escape fix
+zodiax = { git = "https://github.com/bdelwood/zodiax.git", branch = "fix-unescaped-latex" }
+
 [project.optional-dependencies]
 gpu = ["jax[cuda13]"]
 
@@ -50,6 +54,7 @@ dev = [
     "furo>=2024",
     "myst-parser>=3",
     "sphinx-autoapi>=3",
+    "autodoc-pydantic>=2",
     "sphinx-math-dollar>=1.2",
     "sphinx-autobuild>=2024",
 ]
@@ -77,16 +82,7 @@ include = ["src/bolojax"]
 [tool.pytest.ini_options]
 minversion = "9.0"
 addopts = ["-ra", "--showlocals"]
-filterwarnings = [
-    "error",
-    "ignore::DeprecationWarning:astropy",
-    # numpy divide-by-zero in Planck function at T=0
-    "ignore:divide by zero:RuntimeWarning",
-    "ignore:invalid value:RuntimeWarning",
-    # subprocess leak from astropy FITS writing
-    "ignore:subprocess:ResourceWarning",
-    "ignore::pytest.PytestUnraisableExceptionWarning",
-]
+filterwarnings = ["error"]
 log_level = "INFO"
 testpaths = ["tests"]
 
