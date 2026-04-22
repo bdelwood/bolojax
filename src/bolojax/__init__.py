@@ -7,6 +7,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from bolojax._version import __version__ as __version__
+from bolojax.compute import elements as elements
 from bolojax.compute import noise as noise
 from bolojax.compute import physics as physics
 from bolojax.compute.sensitivity import BoloParams as BoloParams

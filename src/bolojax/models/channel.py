@@ -6,10 +6,11 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import PrivateAttr
 
 from bolojax.compute import noise, physics
 from bolojax.compute.noise import Noise
+from bolojax.models.base import BolojaxModel
 from bolojax.models.params import Var
 from bolojax.models.sky import Universe
 from bolojax.models.utils import is_not_none
@@ -18,10 +19,8 @@ if TYPE_CHECKING:
     from bolojax.models.camera import Camera
 
 
-class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
+class Channel(BolojaxModel):  # pylint: disable=too-many-instance-attributes
     """Channel Model."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     _min_tc_tb_diff: ClassVar[float] = 0.010
 

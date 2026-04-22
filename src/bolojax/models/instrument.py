@@ -7,10 +7,11 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, TextIO
 
 from astropy.table import vstack
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import PrivateAttr, model_validator
 
 from bolojax.io.sensitivity import Sensitivity
 from bolojax.io.tables import TableDict
+from bolojax.models.base import BolojaxModel
 from bolojax.models.camera import Camera, build_cameras
 from bolojax.models.optics import Optics, build_optics
 from bolojax.models.params import Var
@@ -21,10 +22,8 @@ if TYPE_CHECKING:
     from bolojax.models.experiment import SimConfig
 
 
-class Instrument(BaseModel):
+class Instrument(BolojaxModel):
     """Class to represent an instrument."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     site: str
     sky_temp: Var("K") = None
@@ -60,11 +59,13 @@ class Instrument(BaseModel):
     def tables(self) -> TableDict | None:
         return self._tables
 
-    def model_post_init(self, __context: object) -> None:
+    @model_validator(mode="after")
+    def _init_derived(self) -> Instrument:
         self._optics = build_optics(self.optics_config)
         self._cameras = build_cameras(self.channel_default, self.camera_config)
         for key, val in self._cameras.items():
             val.set_parent(self, key)
+        return self
 
     def eval_sky(
         self, universe: Universe, nsamples: int = 0, freq_resol: float | None = None

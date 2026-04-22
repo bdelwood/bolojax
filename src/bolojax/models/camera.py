@@ -6,9 +6,10 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import Field, PrivateAttr, model_validator
 
 from bolojax.compute.noise import Noise
+from bolojax.models.base import BolojaxModel
 from bolojax.models.channel import Channel
 from bolojax.models.params import Var
 from bolojax.models.sky import Universe
@@ -19,10 +20,8 @@ if TYPE_CHECKING:
     from bolojax.models.optics import OpticalElement
 
 
-class Camera(BaseModel):
+class Camera(BolojaxModel):
     """Camera model."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     boresite_elevation: Var() = 0.0
     pixel_elevation: Var() = None
@@ -41,7 +40,8 @@ class Camera(BaseModel):
     _name: str | None = PrivateAttr(default=None)
     _noise_calc: Noise | None = PrivateAttr(default=None)
 
-    def model_post_init(self, __context: object) -> None:
+    @model_validator(mode="after")
+    def _init_derived(self) -> Camera:
         # Build the noise calculator with the configured beam model
         self._noise_calc = Noise(beam_preset=self.beam_model)
 
@@ -52,6 +52,7 @@ class Camera(BaseModel):
             for name, overrides in self.chan_config["elements"].items():
                 channels[name] = Channel(**{**defaults, **(overrides or {})})
             self.channels = channels
+        return self
 
     @property
     def noise_calc(self) -> Noise | None:

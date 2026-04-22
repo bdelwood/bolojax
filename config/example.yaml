@@ -48,12 +48,12 @@ instrument:
       spillover: 0.
     elements:
       - primary:
-          obj_type: Mirror
+          type: mirror
           temperature: 273.
           absorption: [0.002, 0.005]
           spillover: 0.01
       - mirror:
-          obj_type: Mirror
+          type: mirror
           temperature: 273.
           absorption: [0.002, 0.005]
       - window:
@@ -101,7 +101,7 @@ instrument:
           absorption: [0.005, 0.010]
           reflection: 0.005
       - aperture:
-          obj_type: ApertureStop
+          type: aperture_stop
           absorption: 0.
           temperature: 2.
       - low_pass3:

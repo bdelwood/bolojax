@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Discriminator, Field, Tag, TypeAdapter
 
 from bolojax.compute import physics
+from bolojax.models.base import BolojaxModel
 from bolojax.models.params import Var
 from bolojax.models.utils import is_not_none
 
@@ -91,11 +92,10 @@ class ChannelResults:
         return (self.effic, self.emiss, self.temp)
 
 
-class OpticalElement(BaseModel):
+class OpticalElement(BolojaxModel):
     """Model for a single optical element."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
-
+    type: Literal["element"] = "element"
     temperature: Var() = None
     spillover_temp: Var("K") = None
     scatter_temp: Var("K") = None
@@ -107,7 +107,7 @@ class OpticalElement(BaseModel):
     scatter_frac: Var() = None
 
     elem_name: str | None = None
-    results: dict = Field(default_factory=dict)
+    results: dict[int, ChannelResults] = Field(default_factory=dict)
 
     def unsample(self) -> None:
         """Clear out the sampled parameters."""
@@ -163,6 +163,7 @@ class OpticalElement(BaseModel):
 class Mirror(OpticalElement):
     """OpticalElement sub-class for mirrors."""
 
+    type: Literal["mirror"] = "mirror"
     conductivity: Var() = None
 
     def calc_abso(
@@ -176,6 +177,7 @@ class Mirror(OpticalElement):
 class Dielectric(OpticalElement):
     """OpticalElement sub-class for dielectrics."""
 
+    type: Literal["dielectric"] = "dielectric"
     thickness: Var() = None
     index: Var() = None
     loss_tangent: Var() = None
@@ -197,6 +199,8 @@ class Dielectric(OpticalElement):
 class ApertureStop(OpticalElement):
     """OpticalElement sub-class for apertures."""
 
+    type: Literal["aperture_stop"] = "aperture_stop"
+
     def calc_abso(
         self, channel: Channel, freqs: np.ndarray, nsample: int
     ) -> float | np.ndarray:
@@ -215,18 +219,21 @@ class ApertureStop(OpticalElement):
         return super().calc_abso(channel, freqs, nsample)
 
 
-_ELEMENT_TYPES: dict[str | None, type[OpticalElement]] = {
-    None: OpticalElement,
-    "Mirror": Mirror,
-    "Dielectric": Dielectric,
-    "ApertureStop": ApertureStop,
-}
+def _element_tag(v: Any) -> str:
+    return v.get("type", "element") if isinstance(v, dict) else v.type
 
 
-class Optics(BaseModel):
+AnyElement = Annotated[
+    Annotated[Mirror, Tag("mirror")]
+    | Annotated[Dielectric, Tag("dielectric")]
+    | Annotated[ApertureStop, Tag("aperture_stop")]
+    | Annotated[OpticalElement, Tag("element")],
+    Discriminator(_element_tag),
+]
+
+
+class Optics(BolojaxModel):
     """A collection of optical elements built from a config dict."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     elements: dict[str, OpticalElement] = Field(default_factory=dict)
     mirrors: dict[str, Mirror] = Field(default_factory=dict)
@@ -246,15 +253,17 @@ def build_optics(config: dict[str, Any]) -> Optics:
 
             elements:
               - forebaffle: { temperature: 240.0 }
-              - window: { obj_type: Dielectric, thickness: 0.001 }
+              - window: { type: dielectric, thickness: 0.001 }
 
         Element ordering is preserved (it defines the optical chain).
+        If ``type`` is absent, defaults to ``"element"`` (generic).
 
     Returns
     -------
     Optics
         Instance with all requested optical elements categorised.
     """
+    adapter = TypeAdapter(AnyElement)
     defaults = config.get("default", {})
     elem_list = config["elements"]
 
@@ -266,9 +275,8 @@ def build_optics(config: dict[str, Any]) -> Optics:
     for item in elem_list:
         ((name, props),) = item.items()
         cfg = {**defaults, **(props or {})}
-        obj_type = cfg.pop("obj_type", None)
-        cls = _ELEMENT_TYPES[obj_type]
-        elem = cls(**cfg)
+        cfg.pop("obj_type", None)
+        elem = adapter.validate_python(cfg)
         elem.elem_name = name
         elements[name] = elem
         if isinstance(elem, Mirror):

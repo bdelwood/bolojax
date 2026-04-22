@@ -7,7 +7,7 @@ import yaml
 
 import bolojax
 
-CONFIG_PATH = Path("config/myExample.yaml")
+CONFIG_PATH = Path("config/example.yaml")
 
 
 class ExampleTestCase(unittest.TestCase):

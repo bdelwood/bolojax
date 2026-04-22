@@ -13,9 +13,10 @@ import am
 import numpy as np
 import xarray as xr
 from joblib import Memory
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import PrivateAttr
 
 from bolojax.compute import physics
+from bolojax.models.base import BolojaxModel
 from bolojax.models.params import Var
 from bolojax.models.utils import cfg_path, is_not_none
 
@@ -208,7 +209,7 @@ class AmAtm(AtmBackend):
         return super().batch(freqs, pwv, elevation)
 
 
-class Atmosphere(BaseModel):
+class Atmosphere(BolojaxModel):
     """Atmosphere model.
 
     The primary backend is ``AmAtm``, which computes atmosphere profiles
@@ -217,10 +218,8 @@ class Atmosphere(BaseModel):
     fallback via ``custom_atm_file`` on the Instrument.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
-
     amc_file: str | None = None
-    amc_args: list | None = None
+    amc_args: list[str | float] | None = None
     profile_pwv_mm: float = 0.425
 
     _telescope: Instrument | None = PrivateAttr(default=None)
@@ -275,10 +274,8 @@ class Atmosphere(BaseModel):
         return transs.reshape((nsamp, 1, len(freqs)))
 
 
-class Foreground(BaseModel):
+class Foreground(BolojaxModel):
     """Foreground model base class."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     spectral_index: Var() = None
     scale_frequency: Var("GHz") = None
@@ -388,10 +385,8 @@ class Synchrotron(Foreground):
         return physics.Tb_from_Trj(freqs, scaled_bright_temp)
 
 
-class Universe(BaseModel):
+class Universe(BolojaxModel):
     """Collection of emission models."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
 
     dust: Dust | None = None
     synchrotron: Synchrotron | None = None

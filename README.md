@@ -103,7 +103,7 @@ configured `Channel`.
 import yaml
 import bolojax
 
-with open("config/myExample.yaml") as f:
+with open("config/example.yaml") as f:
     config = yaml.safe_load(f)
 
 experiment = bolojax.Experiment(**config)
@@ -114,7 +114,7 @@ experiment.instrument.print_summary()
 Or from the command line:
 
 ```bash
-bolojax -i config/myExample.yaml -o results.fits
+bolojax -i config/example.yaml -o results.fits
 ```
 
 ### Programmatic
@@ -125,7 +125,7 @@ import equinox as eqx
 import bolojax
 
 # 1. Load base configuration
-with open("config/myExample.yaml") as f:
+with open("config/example.yaml") as f:
     config = yaml.safe_load(f)
 experiment = bolojax.Experiment(**config)
 sim = experiment.sim_config

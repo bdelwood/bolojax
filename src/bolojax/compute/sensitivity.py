@@ -11,32 +11,36 @@ The main entry point is :func:`compute_sensitivity`, which takes an
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import equinox as eqx
-import jax
 import jax.numpy as jnp
+import zodiax as zdx
 from jax import Array
 
 from bolojax.compute import noise, physics
+from bolojax.compute.elements import Element, SkySource  # noqa: F401
 
-NSKY_SRC = 4
 
+class OpticsState(zdx.Base):
+    """Optical chain state as an ordered dict of typed elements.
 
-class OpticsState(eqx.Module):
-    """Pre-computed optical chain state (from channel/instrument setup).
+    Each element implements ``emiss_trans(freqs)`` to compute its
+    frequency-dependent emissivity and transmission from stored physical
+    properties.
 
-    These arrays are typically fixed for a given instrument configuration
-    and not differentiated through. They describe the optical chain geometry.
+    Elements are stored in optical-chain order as specified in the config. Use ``optics.set("elements.window.loss_tangent",
+    new_val)`` to update element properties.
     """
 
     freqs: Array  # (n_freq,) frequency evaluation points [Hz]
     bandwidth: float  # integrated bandwidth [Hz]
-    temps: Array  # (n_elem, ...) broadcast temperatures [K]
-    trans: Array  # (n_elem+2, ...) padded transmissions
-    emiss: Array  # (n_elem, 1, 1, n_freq) emissivities
+    elements: OrderedDict  # OrderedDict[str, Element | SkySource]
     corr_factors: Array  # (n_elem,) Bose correlation factors
+    n_sky: int  # number of sky source elements (always first)
 
 
-class BoloParams(eqx.Module):
+class BoloParams(zdx.Base):
     """Bolometer and observation parameters.
 
     Float fields are differentiable via eqx.filter_grad.
@@ -68,7 +72,7 @@ class BoloParams(eqx.Module):
     obs_effic: Array
 
 
-class SensitivityResult(eqx.Module):
+class SensitivityResult(zdx.Base):
     """All computed sensitivity quantities as a JAX pytree."""
 
     effic: Array
@@ -241,11 +245,12 @@ def trj_over_tcmb(freqs: Array) -> Array:
 def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityResult:
     """Pure, jax-traceable sensitivity computation.
 
-    All inputs and outputs are jax pytrees. No side effects.
-    Differentiable via eqx.filter_grad with respect to params.
+    Loops over ``optics.elements`` calling each element's
+    ``emiss_trans(freqs)`` to compute emissivity and transmission,
+    then accumulates power contributions through the optical chain.
 
     Args:
-        optics: Pre-computed optical chain state
+        optics: Optical chain state with typed elements
         params: Bolometer and observation parameters
 
     Returns:
@@ -253,12 +258,31 @@ def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityR
     """
     freqs = optics.freqs
     bandwidth = optics.bandwidth
-    temps = optics.temps
-    trans = optics.trans
-    emiss = optics.emiss
+    n_sky = optics.n_sky
 
-    # Total transmission efficiency of the channel as a function of frequency.
-    # Pull out the padding from trans (first and last elements).
+    # Compute per-element emissivity and transmission via polymorphic dispatch.
+    # The for-loop unrolls at trace time (pytree structure is static).
+    emiss_list = []
+    trans_list = []
+    power_list = []
+    for elem in optics.elements.values():
+        e, t = elem.emiss_trans(freqs)
+        emiss_list.append(e)
+        trans_list.append(t)
+        # Power emitted by a particular element (blackbody)
+        power_list.append(physics.bb_pow_spec(freqs, elem.temperature, e))
+
+    # Broadcast to common shape and stack (sky sources may carry batch dims
+    # that optical elements don't, e.g. (1, 1, n_freq) vs (n_freq,))
+    trans_inner = jnp.stack(jnp.broadcast_arrays(*trans_list))
+    elem_power_by_freq = jnp.stack(jnp.broadcast_arrays(*power_list))
+
+    # Pad transmission: [0, t1, t2, ..., tn, 1] for cumulative product
+    pad_lo = jnp.zeros_like(trans_inner[:1])
+    pad_hi = jnp.ones_like(trans_inner[:1])
+    trans = jnp.concatenate([pad_lo, trans_inner, pad_hi], axis=0)
+
+    # Channel efficiency: product of all element transmissions
     chan_effic = jnp.prod(trans[1:-1], axis=0)
 
     # Efficiency of a particular element getting to the detector, as a function
@@ -266,39 +290,30 @@ def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityR
     # side (hence the [::-1] reversal), then strip the padding.
     elem_cumul_effic_by_freq = jnp.cumprod(trans[::-1], axis=0)[::-1][2:]
 
-    # Power emitted by a particular element (blackbody)
-    elem_power_by_freq = physics.bb_pow_spec(freqs, temps, emiss)
-
-    # Power from a particular element reaching the detector
+    # Power from each element reaching the detector
     elem_power_to_det_by_freq = elem_power_by_freq * elem_cumul_effic_by_freq
 
-    # Power accumulated from the sky side down to each element.
-    # This is a sequential accumulation: at each element, add that element's
-    # emitted power then multiply by the element's transmission.
-    def _scan_fn(carry, inputs):
-        elem_pow, elem_tr = inputs
-        carry = (carry + elem_pow) * elem_tr
-        return carry, carry
+    # Cumulative sky-side power: at each element, accumulate power from
+    # upstream elements, then multiply by this element's transmission.
+    carry = jnp.zeros_like(elem_power_by_freq[0])
+    sky_power_list = []
+    for i in range(len(emiss_list)):
+        carry = (carry + elem_power_by_freq[i]) * trans_inner[i]
+        sky_power_list.append(carry)
+    elem_sky_power_by_freq = jnp.stack(sky_power_list)
 
-    _, elem_sky_power_by_freq = jax.lax.scan(
-        _scan_fn,
-        jnp.zeros_like(elem_power_by_freq[0]),
-        (elem_power_by_freq, trans[:-2]),
-    )
-
-    # Integrate all frequency-dependent quantities across the band
-    # using the trapezoid rule
+    # Integrate frequency-dependent quantities across the band
     elem_power_to_det = jnp.trapezoid(elem_power_to_det_by_freq, freqs)
     elem_power_from_sky = jnp.trapezoid(elem_sky_power_by_freq, freqs)
-    elem_effic = jnp.trapezoid(trans[1:-1], freqs) / bandwidth
+    elem_effic = jnp.trapezoid(trans_inner, freqs) / bandwidth
     elem_cumul_effic = jnp.trapezoid(elem_cumul_effic_by_freq, freqs) / bandwidth
     effic = jnp.trapezoid(chan_effic, freqs) / bandwidth
-    tel_effic = jnp.trapezoid(elem_cumul_effic_by_freq[NSKY_SRC], freqs) / bandwidth
+    tel_effic = jnp.trapezoid(elem_cumul_effic_by_freq[n_sky], freqs) / bandwidth
 
-    # From this point, everything is integrated across bands and given per channel
+    # Integrated per-channel quantities
     opt_power = jnp.sum(elem_power_to_det, axis=0)
-    tel_power = jnp.sum(elem_power_to_det[NSKY_SRC:], axis=0)
-    sky_power = jnp.sum(elem_power_from_sky[:NSKY_SRC], axis=0)
+    tel_power = jnp.sum(elem_power_to_det[n_sky:], axis=0)
+    sky_power = jnp.sum(elem_power_from_sky[:n_sky], axis=0)
 
     # RJ temperature equivalents
     tel_rj_temp = physics.rj_temp(tel_power, bandwidth, tel_effic)

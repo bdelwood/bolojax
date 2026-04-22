@@ -12,10 +12,12 @@ from typing import TYPE_CHECKING, ClassVar, TextIO
 
 import jax.numpy as jnp
 import numpy as np
-from jax import Array
 
+from bolojax.compute import elements
 from bolojax.compute.sensitivity import BoloParams, OpticsState, compute_sensitivity
+from bolojax.models import optics
 from bolojax.models.params import OutputField, StatsSummary
+from bolojax.models.utils import is_not_none
 
 if TYPE_CHECKING:
     from astropy.table import Table
@@ -24,11 +26,49 @@ if TYPE_CHECKING:
     from bolojax.models.channel import Channel
 
 
-def _bcast_list(array_list: list) -> Array:
-    """Broadcast a list of arrays and stack along axis 0."""
-    arrays = [jnp.asarray(a, dtype=jnp.float64) for a in array_list]
-    broadcasted = jnp.broadcast_arrays(*arrays)
-    return jnp.stack(broadcasted, axis=0)
+def _make_element(optic: optics.OpticalElement, chan_idx: int) -> elements.Element:
+    """Convert a pydantic OpticalElement to a JAX compute Element.
+
+    Uses pre-computed results from ``eval_instrument`` for sampled
+    properties (temperature, reflection, scatter, spillover) and raw
+    config values for physical properties (thickness, index,
+    loss_tangent, conductivity).
+    """
+    r = optic.results[chan_idx]
+    base = {
+        "temperature": jnp.asarray(r.temp, dtype=jnp.float64),
+        "reflection": float(np.mean(r.refl)),
+        "scatter_frac": float(np.mean(r.scat)),
+        "scatter_temp": float(np.mean(r.scat_temp)),
+        "spillover": float(np.mean(r.spil)),
+        "spillover_temp": float(np.mean(r.spil_temp)),
+    }
+
+    if (
+        isinstance(optic, optics.Dielectric)
+        and is_not_none(optic.thickness)
+        and is_not_none(optic.loss_tangent)
+    ):
+        return elements.Dielectric(
+            **base,
+            thickness=float(optic.thickness.SI),
+            index=float(optic.index.SI),
+            loss_tangent=float(optic.loss_tangent.SI),
+        )
+    if isinstance(optic, optics.Mirror) and is_not_none(optic.conductivity):
+        return elements.Mirror(
+            **base,
+            conductivity=float(optic.conductivity.SI),
+            surface_rough=float(optic.surface_rough.SI)
+            if is_not_none(optic.surface_rough)
+            else 0.0,
+        )
+    if isinstance(optic, optics.ApertureStop):
+        return elements.ApertureStop(**base)
+
+    # Generic element (e.g. forebaffle): use pre-computed absorption
+    abso = float(np.mean(r.abso)) if np.ndim(r.abso) > 0 else float(r.abso)
+    return elements.Element(**base, absorption=abso)
 
 
 def build_params(channel: Channel) -> tuple[OpticsState, BoloParams, list[str]]:
@@ -50,32 +90,36 @@ def build_params(channel: Channel) -> tuple[OpticsState, BoloParams, list[str]]:
     freqs = jnp.asarray(channel.freqs, dtype=jnp.float64)
     bandwidth = float(channel.bandwidth)
 
-    temps_list = channel.sky_temps + channel.optical_temps + [channel._det_temp]
-    temps = _bcast_list(temps_list)
+    chain = OrderedDict()
 
-    # Buffer both sides of the transmission array, because we will be taking
-    # cumulative products that are offset by one (i.e., we want the product of
-    # all the elements downstream of a particular element)
-    trans_list = [
-        0.0,
-        *channel.sky_effic,
-        *channel.optical_effic,
-        channel._det_effic,
-        1.0,
-    ]
-    trans = _bcast_list(trans_list)
+    # Sky sources: precomputed emissivity/transmission from the sky model
+    for name, emiss, effic, temp in zip(
+        channel.sky_names,
+        channel.sky_emiss,
+        channel.sky_effic,
+        channel.sky_temps,
+        strict=False,
+    ):
+        chain[name] = elements.SkySource(
+            temperature=jnp.asarray(temp, dtype=jnp.float64),
+            emiss_spectrum=jnp.asarray(emiss, dtype=jnp.float64),
+            trans_spectrum=jnp.asarray(effic, dtype=jnp.float64),
+        )
+    n_sky = len(channel.sky_names)
 
-    emiss_list = [*channel.sky_emiss, *channel.optical_emiss, channel._det_emiss]
-    emiss = _bcast_list(emiss_list)
+    # Optical elements: typed elements with physical properties
+    for name, optic in camera.optics.items():
+        chain[name] = _make_element(optic, channel.idx)
 
-    # Normalize emiss shape to 4D for physics.bb_pow_spec broadcasting
-    if emiss.ndim == 2:
-        emiss = emiss.reshape((emiss.shape[0], 1, 1, emiss.shape[1]))
-    elif emiss.ndim == 3:
-        emiss = emiss.reshape((emiss.shape[0], 1, emiss.shape[1], emiss.shape[2]))
+    # Detector
+    chain["detector"] = elements.SkySource(
+        temperature=jnp.asarray(channel._det_temp, dtype=jnp.float64),
+        emiss_spectrum=jnp.asarray(channel._det_emiss, dtype=jnp.float64),
+        trans_spectrum=jnp.asarray(channel._det_effic, dtype=jnp.float64),
+    )
 
-    # Element names (for correlation factor computation)
-    elem_names = channel.sky_names + list(camera.optics.keys()) + ["detector"]
+    # Element names for correlation factor computation
+    elem_names = list(chain.keys())
 
     # Pre-compute Bose white-noise correlation factors
     ap_names = list(instrument.optics.apertureStops.keys())
@@ -89,10 +133,9 @@ def build_params(channel: Channel) -> tuple[OpticsState, BoloParams, list[str]]:
     optics = OpticsState(
         freqs=freqs,
         bandwidth=bandwidth,
-        temps=temps,
-        trans=trans,
-        emiss=emiss,
+        elements=chain,
         corr_factors=corr_factors,
+        n_sky=n_sky,
     )
 
     params = BoloParams(

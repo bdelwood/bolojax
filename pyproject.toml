@@ -20,6 +20,7 @@ dependencies = [
     "jax[cpu]",
     "jaxtyping",
     "equinox",
+    "zodiax>=0.5",
     "am-python",
     "joblib",
     "h5py>=3.16.0",
@@ -162,3 +163,23 @@ ignore-words-list = "emiss,boloR"
 [tool.pyrefly]
 project-excludes = ["**/.venv*"]
 ignore-missing-imports = ["scipy.*", "astropy.*", "h5py.*"]
+
+[tool.pyrefly.errors]
+# Var pydantic annotation factory
+# pyrefly can't resolve Annotated[T, Validator()]
+invalid-annotation = false
+# jax.typing.ArrayLike arithmetic always returns Array at runtime
+bad-return = false
+# ArrayLike <> Array <> ndarray interop across jax/numpy boundary
+bad-argument-type = false
+# Accessing attrs on T | None PrivateAttrs (always set before use via set_parent/set_camera)
+missing-attribute = false
+# Operations on T | None values (same runtime invariant)
+unsupported-operation = false
+# np.interp overload resolution/unpacking numpy scalars
+not-iterable = false
+no-matching-overload = false
+# Pydantic discriminated union: subclasses narrow the Literal type field
+bad-override-mutable-attribute = false
+# jax.Array <> np.ndarray assignment across boundary
+bad-assignment = false

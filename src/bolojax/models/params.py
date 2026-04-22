@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import numpy as np
 import scipy.stats as sps
@@ -76,7 +76,7 @@ class VariableHolder(ParamHolder):
         if vt not in ("pdf", "dist", "gauss", "const"):
             msg = f"var_type must be one of pdf/dist/gauss/const, got {vt}"
             raise ValueError(msg)
-        self.var_type: str = vt
+        self.var_type: Literal["const", "gauss", "pdf", "dist"] = vt
         super().__init__(**kwargs)
         self._sampled_values: np.ndarray | None = None
         self._cached_interps: np.ndarray | None = None

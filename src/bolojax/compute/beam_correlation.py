@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -34,7 +35,9 @@ from jax import Array
 from jax.scipy.special import bessel_jn
 from jax.typing import ArrayLike
 
-BeamParams = dict[str, str | float]
+BeamModel = Literal["poly_taper", "trunc_gauss", "he11"]
+BeamPreset = Literal["bolocalc", "trunc_gauss", "he11"]
+BeamParams = dict[str, BeamModel | float]
 
 
 def j0(x: ArrayLike) -> Array:
@@ -222,7 +225,7 @@ def load_bolocalc_stop() -> tuple[Array, Array]:
 
 
 def compute_corr_curves(
-    preset: str | BeamParams = "bolocalc", p_grid: Array | None = None
+    preset: BeamPreset | BeamParams = "bolocalc", p_grid: Array | None = None
 ) -> tuple[Array, Array, Array]:
     r"""Compute aperture and stop coherence curves for a given preset.
 
