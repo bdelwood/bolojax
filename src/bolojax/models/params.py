@@ -7,36 +7,48 @@ annotation helper. Unit conversion is handled by pint.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import partial
 from typing import Annotated, Any, Literal
 
 import numpy as np
 import pint
 import scipy.stats as sps
-from pydantic import GetCoreSchemaHandler
-from pydantic_core import CoreSchema, core_schema
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    model_validator,
+)
 
 from bolojax.models.interp import FreqInterp
 from bolojax.models.pdf import ChoiceDist
 from bolojax.models.unit import ureg
 from bolojax.models.utils import cfg_path, is_none
 
+PintUnit = Annotated[
+    pint.Unit | None, BeforeValidator(lambda v: None if v is None else ureg.Unit(v))
+]
+ValueArray = Annotated[
+    np.ndarray,
+    BeforeValidator(lambda v: np.asarray(np.nan if is_none(v) else v, dtype=float)),
+]
+FloatArray = Annotated[np.ndarray, BeforeValidator(partial(np.asarray, dtype=float))]
+BoolArray = Annotated[np.ndarray, BeforeValidator(partial(np.asarray, dtype=bool))]
 
-class ParamHolder:
+
+class ParamHolder(BaseModel):
     """Container for a parameter value with unit conversion via pint."""
 
-    def __init__(self, **kwargs: Any) -> None:
-        value = kwargs.get("value", np.nan)
-        if is_none(value):
-            value = np.nan
-        self.value: np.ndarray = np.asarray(value, dtype=float)
-        self.errors: np.ndarray = np.asarray(kwargs.get("errors", np.nan), dtype=float)
-        self.bounds: np.ndarray = np.asarray(kwargs.get("bounds", np.nan), dtype=float)
-        self.scale: np.ndarray = np.asarray(kwargs.get("scale", 1.0), dtype=float)
-        self.free: np.ndarray = np.asarray(kwargs.get("free", False), dtype=bool)
-        unit = kwargs.get("unit")
-        if isinstance(unit, str):
-            unit = ureg.Unit(unit)
-        self.unit: pint.Unit | None = unit
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
+
+    unit: PintUnit = None
+    value: ValueArray = Field(default_factory=lambda: np.asarray(np.nan, dtype=float))
+    errors: FloatArray = Field(default_factory=lambda: np.asarray(np.nan, dtype=float))
+    bounds: FloatArray = Field(default_factory=lambda: np.asarray(np.nan, dtype=float))
+    scale: FloatArray = Field(default_factory=lambda: np.asarray(1.0, dtype=float))
+    free: BoolArray = Field(default_factory=lambda: np.asarray(False, dtype=bool))
 
     @property
     def scaled(self) -> np.ndarray:
@@ -70,20 +82,29 @@ class ParamHolder:
 class VariableHolder(ParamHolder):
     """ParamHolder with frequency-dependent sampling support."""
 
-    def __init__(self, *args: float | np.ndarray, **kwargs: Any) -> None:
-        if args:
-            kwargs["value"] = args[0]
-        self.fname: str | None = kwargs.pop("fname", None)
-        vt: str | None = kwargs.pop("var_type", "const")
-        if vt is None or is_none(vt):
-            vt = "const"
-        if vt not in ("pdf", "dist", "gauss", "const"):
-            msg = f"var_type must be one of pdf/dist/gauss/const, got {vt}"
-            raise ValueError(msg)
-        self.var_type: Literal["const", "gauss", "pdf", "dist"] = vt
-        super().__init__(**kwargs)
-        self._sampled_values: np.ndarray | None = None
-        self._cached_interps: np.ndarray | None = None
+    fname: str | None = None
+    var_type: Literal["const", "gauss", "pdf", "dist"] = "const"
+
+    _sampled_values: np.ndarray | None = PrivateAttr(default=None)
+    _cached_interps: np.ndarray | None = PrivateAttr(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_mapping_strings(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping):
+            return data
+        parsed = dict(data)
+        raw_unit = parsed.get("unit")
+        unit = None if raw_unit is None else ureg.Unit(raw_unit)
+        if unit is not None:
+            parsed["unit"] = unit
+        if is_none(parsed.get("var_type")):
+            parsed["var_type"] = "const"
+        for key, val in list(parsed.items()):
+            if key in {"value", "errors", "bounds", "scale"} and isinstance(val, str):
+                q = ureg.Quantity(val)
+                parsed[key] = float(q.to(unit).magnitude if unit else q.magnitude)
+        return parsed
 
     @staticmethod
     def _channel_value(arr: np.ndarray | float, chan_idx: int) -> np.ndarray | float:
@@ -165,61 +186,31 @@ class VariableHolder(ParamHolder):
         return super().scaled
 
 
-class _VarValidator:
-    """Pydantic annotation that converts raw YAML values to VariableHolder.
-
-    Handles three input forms:
-    - Scalar (int/float): treated as a value in the declared unit
-    - String with units (``"25 mm"``): parsed by pint, converted to declared unit
-    - Dict (``{value: ..., var_type: gauss, ...}``): full VariableHolder config
-    """
-
-    def __init__(self, unit: str | None = None) -> None:
-        self._unit: pint.Unit | None = ureg.Unit(unit) if unit else None
-
-    def _parse_value(self, v: Any) -> float:
-        """Parse a scalar or unit-string value into the declared unit."""
-        if isinstance(v, str):
-            q = ureg.Quantity(v)
-            if self._unit is not None:
-                q = q.to(self._unit)
-            return float(q.magnitude)
-        return v
-
-    def __get_pydantic_core_schema__(
-        self, source_type: type, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
-        unit = self._unit
-        parse = self._parse_value
-
-        def _validate(v: Any) -> VariableHolder:
-            if isinstance(v, VariableHolder):
-                return v
-            kw: dict[str, Any] = {}
-            if unit is not None:
-                kw["unit"] = unit
-            if isinstance(v, Mapping):
-                kw.update(v)
-                if "value" in kw and isinstance(kw["value"], str):
-                    kw["value"] = parse(kw["value"])
-            elif is_none(v):
-                kw.setdefault("value", np.nan)
-            elif isinstance(v, str):
-                kw["value"] = parse(v)
-            else:
-                kw["value"] = v
-            return VariableHolder(**kw)
-
-        return core_schema.no_info_plain_validator_function(_validate)
-
-
 def Var(unit: str | None = None) -> type[VariableHolder]:
-    """Type annotation for a Variable field.
+    """Type annotation for a Variable field with optional pint unit.
+
+    Accepts scalars, unit strings (``"25 mm"``), dicts
+    (``{value: ..., var_type: gauss, ...}``), or None.
 
     Usage::
 
         band_center: Var("GHz") = None       # optional, defaults to NaN
-        temperature: Var()                    # required (no default)
-        frac_bw: Var() = 0.35                # optional with value default
+        temperature: Var("K")                # required
+        frac_bw: Var() = 0.35                # dimensionless with default
     """
-    return Annotated[VariableHolder, _VarValidator(unit)]
+    pint_unit = ureg.Unit(unit) if unit else None
+
+    def _validate(v: Any) -> VariableHolder | dict[str, Any]:
+        if isinstance(v, VariableHolder):
+            return v
+        if isinstance(v, Mapping):
+            kw = dict(v)
+        elif is_none(v):
+            kw = {"value": np.nan}
+        else:
+            kw = {"value": v}
+        if pint_unit is not None:
+            kw.setdefault("unit", pint_unit)
+        return kw
+
+    return Annotated[VariableHolder, BeforeValidator(_validate)]

@@ -7,15 +7,15 @@ sim_config:
 universe:
   dust:
     spectral_index: 1.5
-    amplitude: 1.2E-2
-    scale_frequency: 353.0
+    amplitude: "1.2E-2 MJy"
+    scale_frequency: "353 GHz"
     scale_temperature:
       var_type: pdf
       fname: Pdf/dustTemperature.txt
   synchrotron:
     spectral_index: -3.0
-    amplitude: 2.0E-4
-    scale_frequency: 30.
+    amplitude: "2.0E-4 K_RJ"
+    scale_frequency: "30 GHz"
   atmosphere:
     amc_file: SPole_annual_median_MERRA2_2007-2016.amc
     amc_args: [0, 300, zenith, pwv_scale]
@@ -28,7 +28,7 @@ instrument:
   pwv:
     var_type: pdf
     fname: Pdf/pwv.txt
-  obs_time: 5.
+  obs_time: "5 yr"
   sky_fraction: 0.2
   obs_effic:
     var_type: pdf
@@ -40,19 +40,19 @@ instrument:
     revisit_rate: None
   optics_config:
     default:
-      temperature: 273.
+      temperature: "273 K"
       reflection: 0.
       scatter_frac: 0.
       spillover: 0.
     elements:
       - primary:
           type: mirror
-          temperature: 273.
+          temperature: "273 K"
           absorption: [0.002, 0.005]
           spillover: 0.01
       - mirror:
           type: mirror
-          temperature: 273.
+          temperature: "273 K"
           absorption: [0.002, 0.005]
       - window:
           temperature:
@@ -63,62 +63,62 @@ instrument:
             var_type: dist
             fname: Bands/Optics/Window_reflection.txt
           spillover: [0.020, 0.050]
-          spillover_temp: 273.0
+          spillover_temp: "273 K"
           scatter_frac:
             var_type: dist
             fname: Bands/Optics/Window_scatterFrac.txt
       - IRshader1:
-          temperature: 291
+          temperature: "291 K"
           absorption: 0.001
       - IRshader2:
-          temperature: 245.
+          temperature: "245 K"
           absorption: 0.001
       - IRshader3:
-          temperature: 200.
+          temperature: "200 K"
           absorption: 0.001
       - abs_filter:
-          temperature: 80.
+          temperature: "80 K"
           absorption: 0.01
           reflection: 0.02
       - low_pass1:
-          temperature: 40.
+          temperature: "40 K"
           absorption: 0.01
           reflection: 0.05
       - lens1:
-          temperature: 4.
+          temperature: "4 K"
           absorption:
             var_type: pdf
             fname: "Pdf/Lens1_absorption_1.txt,Pdf/Lens1_absorption_2.txt"
           reflection: 0.005
       - low_pass2:
-          temperature: 4.
+          temperature: "4 K"
           absorption: 0.01
           reflection: 0.05
       - lens2:
-          temperature: 2.
+          temperature: "2 K"
           absorption: [0.005, 0.010]
           reflection: 0.005
       - aperture:
           type: aperture_stop
           absorption: 0.
-          temperature: 2.
+          temperature: "2 K"
       - low_pass3:
-          temperature: 2.
+          temperature: "2 K"
           absorption: 0.01
           reflection: 0.05
       - lens3:
-          temperature: 2.
+          temperature: "2 K"
           absorption: [0.005, 0.010]
           reflection: 0.005
       - low_pass4:
-          temperature: 1.5
+          temperature: "1.5 K"
           absorption: 0.01
           reflection: 0.05
   channel_default:
-    band_center: 100.
+    band_center: "100 GHz"
     fractional_bandwidth: .35
     band_response: 1.
-    pixel_size: 6.8
+    pixel_size: "6.8 mm"
     num_det_per_water: 542
     num_wafer_per_optics_tube: 1
     num_optics_tube: 3
@@ -127,7 +127,7 @@ instrument:
     psat: None
     psat_factor: 3.
     carrier_index: 3
-    Tc: .165
+    Tc: "165 mK"
     Tc_fraction: None
     G: None
     Flink: None
@@ -142,21 +142,21 @@ instrument:
       boresite_elevation: 0
       optical_coupling: 1
       f_number: 2.5
-      bath_temperature: .1
+      bath_temperature: "100 mK"
     elements:
       cam_1:
         skip_optical_elements: []
         chan_config:
           elements:
             chan_1:
-              band_center: 90.
+              band_center: "90 GHz"
               fractional_bandwidth: .444
               band_response:
                 var_type: dist
                 fname: Bands/Cam_1.txt
               read_frac: 0.1
             chan_2:
-              band_center: 150.
+              band_center: "150 GHz"
               fractional_bandwidth: .40
               response_factor: 1.41
               det_eff:
@@ -167,22 +167,22 @@ instrument:
                 fname: Pdf/squidNEI_2.txt
               bolo_resistance:
                 var_type: gauss
-                value: 1.0
-                errors: 0.1
+                value: "1.0 Ohm"
+                errors: "0.1 Ohm"
               read_frac: None
       cam_2:
         skip_optical_elements: []
         chan_config:
           elements:
             chan_1:
-              band_center: 95.
+              band_center: "95 GHz"
               fractional_bandwidth: .52
               band_response:
                 var_type: dist
                 fname: Bands/Cam_1.txt
               read_frac: 0.1
             chan_2:
-              band_center: 150.
+              band_center: "150 GHz"
               fractional_bandwidth: .40
               response_factor: 1.41
               det_eff:
@@ -193,6 +193,6 @@ instrument:
                 fname: Pdf/squidNEI_2.txt
               bolo_resistance:
                 var_type: gauss
-                value: 1.0
-                errors: 0.1
+                value: "1.0 Ohm"
+                errors: "0.1 Ohm"
               read_frac: None

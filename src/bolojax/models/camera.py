@@ -27,7 +27,7 @@ class CameraConfig(BolojaxModel):
     pixel_elevation: Var() = None
     optical_coupling: Var() = 1.0
     f_number: Var() = 2.5
-    bath_temperature: Var() = 0.1
+    bath_temperature: Var("K") = 0.1
     skip_optical_elements: list = Field(default_factory=list)
     chan_config: dict | None = None
     beam_model: str = "bolocalc"
