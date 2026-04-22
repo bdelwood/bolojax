@@ -30,19 +30,32 @@ def _make_element(optic: optics.OpticalElement, chan_idx: int) -> elements.Eleme
     loss_tangent, conductivity).
     """
     r = optic.results[chan_idx]
+
+    # TODO: fix this limitation! Somewhat bad form to silently convert elements to SkySource
+    has_freq_dep = np.ndim(r.emiss) > 0 or np.ndim(r.effic) > 0
+    if has_freq_dep:
+        return elements.SkySource(
+            temperature=jnp.asarray(r.temp, dtype=jnp.float64),
+            emiss_spectrum=jnp.asarray(r.emiss, dtype=jnp.float64),
+            trans_spectrum=jnp.asarray(r.effic, dtype=jnp.float64),
+        )
+
+    # Scalar properties: build a typed element for differentiability
     base = {
         "temperature": jnp.asarray(r.temp, dtype=jnp.float64),
-        "reflection": jnp.float64(np.mean(r.refl)),
-        "scatter_frac": jnp.float64(np.mean(r.scat)),
-        "scatter_temp": jnp.float64(np.mean(r.scat_temp)),
-        "spillover": jnp.float64(np.mean(r.spil)),
-        "spillover_temp": jnp.float64(np.mean(r.spil_temp)),
+        "reflection": jnp.float64(r.refl),
+        "scatter_frac": jnp.float64(r.scat),
+        "scatter_temp": jnp.float64(r.scat_temp),
+        "spillover": jnp.float64(r.spil),
+        "spillover_temp": jnp.float64(r.spil_temp),
     }
 
     if (
         isinstance(optic, optics.Dielectric)
         and is_not_none(optic.thickness)
+        and np.isfinite(optic.thickness.SI).all()
         and is_not_none(optic.loss_tangent)
+        and np.isfinite(optic.loss_tangent.SI).all()
     ):
         return elements.Dielectric(
             **base,
@@ -50,19 +63,22 @@ def _make_element(optic: optics.OpticalElement, chan_idx: int) -> elements.Eleme
             index=jnp.float64(optic.index.SI),
             loss_tangent=jnp.float64(optic.loss_tangent.SI),
         )
-    if isinstance(optic, optics.Mirror) and is_not_none(optic.conductivity):
+    if (
+        isinstance(optic, optics.Mirror)
+        and is_not_none(optic.conductivity)
+        and np.isfinite(optic.conductivity.SI).all()
+    ):
         return elements.Mirror(
             **base,
             conductivity=jnp.float64(optic.conductivity.SI),
             surface_rough=jnp.float64(optic.surface_rough.SI)
             if is_not_none(optic.surface_rough)
+            and np.isfinite(optic.surface_rough.SI).all()
             else jnp.float64(0.0),
         )
-    if isinstance(optic, optics.ApertureStop):
-        return elements.ApertureStop(**base)
 
-    # Generic element (e.g. forebaffle): use pre-computed absorption
-    return elements.Element(**base, absorption=jnp.float64(np.mean(r.abso)))
+    # Generic element: use pre-computed absorption
+    return elements.Element(**base, absorption=jnp.float64(r.abso))
 
 
 def build_experiment(channel: ChannelConfig) -> Experiment:
