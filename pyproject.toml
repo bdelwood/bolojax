@@ -14,7 +14,6 @@ classifiers = [
 dependencies = [
     "numpy>=2",
     "scipy",
-    "astropy",
     "pyyaml",
     "pydantic>=2.7",
     "jax[cpu]",
@@ -23,7 +22,8 @@ dependencies = [
     "zodiax>=0.5",
     "am-python",
     "joblib",
-    "h5py>=3.16.0",
+    "pint>=0.24",
+    "xarray",
 ]
 
 [project.optional-dependencies]
@@ -162,7 +162,7 @@ ignore-words-list = "emiss,boloR"
 
 [tool.pyrefly]
 project-excludes = ["**/.venv*"]
-ignore-missing-imports = ["scipy.*", "astropy.*", "h5py.*"]
+ignore-missing-imports = ["scipy.*"]
 
 [tool.pyrefly.errors]
 # Var pydantic annotation factory

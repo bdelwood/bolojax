@@ -11,8 +11,8 @@ class BolojaxModel(BaseModel):
     Notes
     -----
     - ``frozen=True`` is deliberately omitted because many models
-      mutate after init (e.g., Camera sets ``_instrument``,
-      Channel sets ``_bandwidth``).
+      mutate after init (e.g., CameraConfig sets ``_instrument``,
+      ChannelConfig sets ``_bandwidth``).
     - ``extra="forbid"`` catches typos in YAML configs early.
     """
 

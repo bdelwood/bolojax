@@ -16,10 +16,10 @@ from bolojax.models.sky import Universe
 from bolojax.models.utils import is_not_none
 
 if TYPE_CHECKING:
-    from bolojax.models.camera import Camera
+    from bolojax.models.camera import CameraConfig
 
 
-class Channel(BolojaxModel):  # pylint: disable=too-many-instance-attributes
+class ChannelConfig(BolojaxModel):  # pylint: disable=too-many-instance-attributes
     """Channel Model."""
 
     _min_tc_tb_diff: ClassVar[float] = 0.010
@@ -69,7 +69,7 @@ class Channel(BolojaxModel):  # pylint: disable=too-many-instance-attributes
     _det_effic: np.ndarray | float | None = PrivateAttr(default=None)
     _det_emiss: np.ndarray | float | None = PrivateAttr(default=None)
     _det_temp: np.ndarray | float | None = PrivateAttr(default=None)
-    _camera: Camera | None = PrivateAttr(default=None)
+    _camera: CameraConfig | None = PrivateAttr(default=None)
     _idx: int | None = PrivateAttr(default=None)
     _freqs: np.ndarray | None = PrivateAttr(default=None)
     _flo: np.ndarray | float | None = PrivateAttr(default=None)
@@ -86,7 +86,7 @@ class Channel(BolojaxModel):  # pylint: disable=too-many-instance-attributes
     def bandwidth(self, value: np.ndarray | float | None) -> None:
         self._bandwidth = value
 
-    def set_camera(self, camera: Camera, idx: int) -> None:
+    def set_camera(self, camera: CameraConfig, idx: int) -> None:
         """Set the parent camera and the channel index."""
         self._camera = camera
         self._idx = idx
@@ -98,7 +98,7 @@ class Channel(BolojaxModel):  # pylint: disable=too-many-instance-attributes
         self.bolo_resistance.sample(nsamples)
 
     @property
-    def camera(self) -> Camera | None:
+    def camera(self) -> CameraConfig | None:
         return self._camera
 
     @property

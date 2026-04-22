@@ -1,29 +1,21 @@
-"""Class to represent an instrument."""
+"""Instrument configuration model."""
 
 from __future__ import annotations
 
-import sys
 from collections import OrderedDict
-from typing import TYPE_CHECKING, TextIO
 
-from astropy.table import vstack
 from pydantic import PrivateAttr, model_validator
 
-from bolojax.io.sensitivity import Sensitivity
-from bolojax.io.tables import TableDict
 from bolojax.models.base import BolojaxModel
-from bolojax.models.camera import Camera, build_cameras
+from bolojax.models.camera import CameraConfig, build_cameras
 from bolojax.models.optics import Optics, build_optics
 from bolojax.models.params import Var
 from bolojax.models.readout import Readout
 from bolojax.models.sky import Universe
 
-if TYPE_CHECKING:
-    from bolojax.models.experiment import SimConfig
 
-
-class Instrument(BolojaxModel):
-    """Class to represent an instrument."""
+class InstrumentConfig(BolojaxModel):
+    """Instrument configuration: optics, cameras, channels, readout."""
 
     site: str
     sky_temp: Var("K") = None
@@ -43,24 +35,18 @@ class Instrument(BolojaxModel):
     channel_default: dict
 
     _optics: Optics | None = PrivateAttr(default=None)
-    _cameras: OrderedDict[str, Camera] | None = PrivateAttr(default=None)
-    _tables: TableDict | None = PrivateAttr(default=None)
-    _sns_dict: OrderedDict[str, Sensitivity] | None = PrivateAttr(default=None)
+    _cameras: OrderedDict[str, CameraConfig] | None = PrivateAttr(default=None)
 
     @property
     def optics(self) -> Optics | None:
         return self._optics
 
     @property
-    def cameras(self) -> OrderedDict[str, Camera] | None:
+    def cameras(self) -> OrderedDict[str, CameraConfig] | None:
         return self._cameras
 
-    @property
-    def tables(self) -> TableDict | None:
-        return self._tables
-
     @model_validator(mode="after")
-    def _init_derived(self) -> Instrument:
+    def _init_derived(self) -> InstrumentConfig:
         self._optics = build_optics(self.optics_config)
         self._cameras = build_cameras(self.channel_default, self.camera_config)
         for key, val in self._cameras.items():
@@ -84,65 +70,3 @@ class Instrument(BolojaxModel):
             camera.sample(nsamples)
             camera.eval_optical_chains(nsamples, freq_resol)
             camera.eval_det_response(nsamples, freq_resol)
-
-    def eval_sensitivities(self) -> None:
-        """Evaluate the sensitivities."""
-        self._sns_dict = OrderedDict()
-        for cam_name, camera in self.cameras.items():
-            for chan_name, channel in camera.channels.items():
-                full_name = f"{cam_name}_{chan_name}"
-                self._sns_dict[full_name] = Sensitivity(channel)
-
-    def make_tables(self, basename: str = "", **kwargs: object) -> TableDict:
-        """Make fits tables with output values."""
-        self._tables = TableDict()
-        for key, val in self._sns_dict.items():
-            val.make_tables(f"{basename}{key}", self._tables, **kwargs)
-
-        if kwargs.get("save_summary", True):
-            sum_keys = [key for key in self._tables.keys() if key.find("_summary") > 0]  # noqa: SIM118
-            sum_table = vstack(
-                [self._tables.pop_table(sum_key) for sum_key in sum_keys]
-            )
-            self._tables.add_datatable(f"{basename}summary", sum_table)
-        if kwargs.get("save_optical", True):
-            opt_keys = [key for key in self._tables.keys() if key.find("_optical") > 0]  # noqa: SIM118
-            opt_table = vstack(
-                [self._tables.pop_table(opt_key) for opt_key in opt_keys]
-            )
-            self._tables.add_datatable(f"{basename}optical", opt_table)
-        return self._tables
-
-    def write_tables(self, filename: str) -> None:
-        """Write output fits tables."""
-        if self._tables:
-            self._tables.save_datatables(filename)
-
-    def print_summary(self, stream: TextIO = sys.stdout) -> None:
-        """Print summary stats in human readable format."""
-        for key, val in self._sns_dict.items():
-            stream.write(f"{key} ---------\n")
-            val.print_summary(stream)
-            stream.write("---------\n")
-
-    def print_optical_output(self, stream: TextIO = sys.stdout) -> None:
-        """Print summary stats in human readable format."""
-        for key, val in self._sns_dict.items():
-            stream.write(f"{key} ---------\n")
-            val.print_optical_output(stream)
-            stream.write("---------\n")
-
-    def run(self, universe: Universe, sim_cfg: SimConfig, basename: str = "") -> None:
-        """Run the analysis chain."""
-        self.eval_sky(universe, sim_cfg.nsky_sim, sim_cfg.freq_resol)
-        self.eval_instrument(sim_cfg.ndet_sim, sim_cfg.freq_resol)
-        self.eval_sensitivities()
-        save_summary = sim_cfg.save_summary
-        if max(sim_cfg.nsky_sim, 1) * max(sim_cfg.ndet_sim, 1) == 1:
-            save_summary = False
-        self.make_tables(
-            basename,
-            save_summary=save_summary,
-            save_sim=sim_cfg.save_sim,
-            save_cfg=sim_cfg.save_optical,
-        )

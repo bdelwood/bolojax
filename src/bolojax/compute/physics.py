@@ -21,14 +21,14 @@ import jax.numpy as jnp
 from jax import Array
 from jax.typing import ArrayLike
 
-h = 6.6261e-34
-kB = 1.3806e-23
-c = 299792458.0
+h = 6.62607015e-34  # Planck constant [J·s] (CODATA 2018 exact)
+kB = 1.380649e-23  # Boltzmann constant [J/K] (CODATA 2018 exact)
+c = 299792458.0  # speed of light [m/s] (exact by definition)
 PI = math.pi
-mu0 = 1.256637e-6
-ep0 = 8.854188e-12
+mu0 = 1.25663706212e-6  # permeability of free space [H/m]
+ep0 = 8.8541878128e-12  # permittivity of free space [F/m]
 Z0 = math.sqrt(mu0 / ep0)
-Tcmb = 2.725
+Tcmb = 2.7255  # CMB temperature [K] (Fixsen 2009)
 
 
 def lamb(freq: ArrayLike, ind: ArrayLike = 1.0) -> Array:

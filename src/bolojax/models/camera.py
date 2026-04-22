@@ -10,17 +10,17 @@ from pydantic import Field, PrivateAttr, model_validator
 
 from bolojax.compute.noise import Noise
 from bolojax.models.base import BolojaxModel
-from bolojax.models.channel import Channel
+from bolojax.models.channel import ChannelConfig
 from bolojax.models.params import Var
 from bolojax.models.sky import Universe
 from bolojax.models.utils import is_not_none
 
 if TYPE_CHECKING:
-    from bolojax.models.instrument import Instrument
+    from bolojax.models.instrument import InstrumentConfig
     from bolojax.models.optics import OpticalElement
 
 
-class Camera(BolojaxModel):
+class CameraConfig(BolojaxModel):
     """Camera model."""
 
     boresite_elevation: Var() = 0.0
@@ -33,15 +33,15 @@ class Camera(BolojaxModel):
     beam_model: str = "bolocalc"
 
     # Channels built from chan_config during construction
-    channels: dict[str, Channel] = Field(default_factory=dict)
+    channels: dict[str, ChannelConfig] = Field(default_factory=dict)
 
     _optics: OrderedDict[str, OpticalElement] | None = PrivateAttr(default=None)
-    _instrument: Instrument | None = PrivateAttr(default=None)
+    _instrument: InstrumentConfig | None = PrivateAttr(default=None)
     _name: str | None = PrivateAttr(default=None)
     _noise_calc: Noise | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
-    def _init_derived(self) -> Camera:
+    def _init_derived(self) -> CameraConfig:
         # Build the noise calculator with the configured beam model
         self._noise_calc = Noise(beam_preset=self.beam_model)
 
@@ -50,7 +50,7 @@ class Camera(BolojaxModel):
             defaults = self.chan_config.get("default", {})
             channels = OrderedDict()
             for name, overrides in self.chan_config["elements"].items():
-                channels[name] = Channel(**{**defaults, **(overrides or {})})
+                channels[name] = ChannelConfig(**{**defaults, **(overrides or {})})
             self.channels = channels
         return self
 
@@ -71,7 +71,7 @@ class Camera(BolojaxModel):
     def name(self, value: str | None) -> None:
         self._name = value
 
-    def set_parent(self, instrument: Instrument, name: str) -> None:
+    def set_parent(self, instrument: InstrumentConfig, name: str) -> None:
         """Pass information from the parent instrument down the food chain."""
         self._instrument = instrument
         self._name = name
@@ -123,7 +123,7 @@ class Camera(BolojaxModel):
             chan.eval_det_response(nsample, freq_resol)
 
     @property
-    def instrument(self) -> Instrument | None:
+    def instrument(self) -> InstrumentConfig | None:
         """Return the parent instrument."""
         return self._instrument
 
@@ -135,5 +135,5 @@ def build_cameras(def_channel_config: dict, camera_config: dict) -> OrderedDict:
     for key, overrides in camera_config["elements"].items():
         cam_cfg = {**defaults, **(overrides or {})}
         cam_cfg["chan_config"]["default"] = def_channel_config.copy()
-        ret[key] = Camera(**cam_cfg)
+        ret[key] = CameraConfig(**cam_cfg)
     return ret

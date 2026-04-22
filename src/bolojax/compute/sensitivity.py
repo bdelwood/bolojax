@@ -1,108 +1,117 @@
 """Pure, jax-traceable sensitivity computation.
 
-This module contains the core math for bolometer sensitivity calculations,
-expressed entirely in jax.numpy operations. All functions are differentiable
-via jax.grad / eqx.filter_grad.
+Core math for bolometer sensitivity calculations, expressed entirely in
+jax.numpy operations. All functions are differentiable via
+jax.grad / eqx.filter_grad.
 
-The main entry point is :func:`compute_sensitivity`, which takes an
-:class:`OpticsState` and :class:`BoloParams` and returns a
-:class:`SensitivityResult`.
+:func:`compute_sensitivity` takes an :class:`~bolojax.compute.experiment.Experiment`
+and returns a :class:`SensitivityResult`.
 """
 
 from __future__ import annotations
 
-from collections import OrderedDict
+from typing import TYPE_CHECKING, Annotated, get_type_hints
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
+import pint
+import xarray as xr
 import zodiax as zdx
 from jax import Array
 
 from bolojax.compute import noise, physics
-from bolojax.compute.elements import Element, SkySource  # noqa: F401
+from bolojax.compute.elements import SkySource
+from bolojax.models.unit import ureg
 
+if TYPE_CHECKING:
+    from bolojax.compute.experiment import Experiment
 
-class OpticsState(zdx.Base):
-    """Optical chain state as an ordered dict of typed elements.
-
-    Each element implements ``emiss_trans(freqs)`` to compute its
-    frequency-dependent emissivity and transmission from stored physical
-    properties.
-
-    Elements are stored in optical-chain order as specified in the config. Use ``optics.set("elements.window.loss_tangent",
-    new_val)`` to update element properties.
-    """
-
-    freqs: Array  # (n_freq,) frequency evaluation points [Hz]
-    bandwidth: float  # integrated bandwidth [Hz]
-    elements: OrderedDict  # OrderedDict[str, Element | SkySource]
-    corr_factors: Array  # (n_elem,) Bose correlation factors
-    n_sky: int  # number of sky source elements (always first)
-
-
-class BoloParams(zdx.Base):
-    """Bolometer and observation parameters.
-
-    Float fields are differentiable via eqx.filter_grad.
-    Integer fields (ndet) are automatically treated as static.
-    """
-
-    # Bolometer thermal
-    Tc: Array
-    bath_temp: Array
-    carrier_index: Array
-    psat: Array
-    psat_factor: Array
-    G: Array
-    Flink: Array
-
-    # Readout
-    squid_nei: Array
-    bolo_R: Array
-    response_factor: Array
-    read_frac: Array
-    optical_coupling: Array
-
-    # Observation / array
-    NET_scale: Array
-    ndet: int
-    det_yield: Array
-    fsky: Array
-    obs_time: Array
-    obs_effic: Array
+# Annotated output types: pint.Unit metadata in the type hint
+Power = Annotated[Array, ureg.Unit("pW")]
+Conductance = Annotated[Array, ureg.Unit("pW/K")]
+Temp = Annotated[Array, ureg.Unit("K")]
+NoiseDensity = Annotated[Array, ureg.Unit("aW/rtHz")]
+SensUnit = Annotated[Array, ureg.Unit("uK * s**0.5")]
+MapDepth = Annotated[Array, ureg.Unit("uK * arcmin")]
 
 
 class SensitivityResult(zdx.Base):
-    """All computed sensitivity quantities as a JAX pytree."""
+    """All computed sensitivity quantities as a JAX pytree.
+
+    Fields annotated with a ``pint.Unit`` carry display-unit metadata.
+    Call ``.to_dataset(element_names)`` for an xarray Dataset.
+    """
 
     effic: Array
-    opt_power: Array
-    P_sat: Array
-    G: Array
+    opt_power: Power
+    P_sat: Power
+    G: Conductance
     Flink: Array
-    tel_power: Array
-    sky_power: Array
-    tel_rj_temp: Array
-    sky_rj_temp: Array
+    tel_power: Power
+    sky_power: Power
+    tel_rj_temp: Temp
+    sky_rj_temp: Temp
     elem_effic: Array
     elem_cumul_effic: Array
-    elem_power_from_sky: Array
-    elem_power_to_det: Array
-    NEP_bolo: Array
-    NEP_read: Array
-    NEP_ph: Array
-    NEP_ph_corr: Array
-    NEP: Array
-    NEP_corr: Array
-    NET: Array
-    NET_corr: Array
-    NET_RJ: Array
-    NET_corr_RJ: Array
-    NET_arr: Array
-    NET_arr_RJ: Array
+    elem_power_from_sky: Power
+    elem_power_to_det: Power
+    NEP_bolo: NoiseDensity
+    NEP_read: NoiseDensity
+    NEP_ph: NoiseDensity
+    NEP_ph_corr: NoiseDensity
+    NEP: NoiseDensity
+    NEP_corr: NoiseDensity
+    NET: SensUnit
+    NET_corr: SensUnit
+    NET_RJ: SensUnit
+    NET_corr_RJ: SensUnit
+    NET_arr: SensUnit
+    NET_arr_RJ: SensUnit
     corr_fact: Array
-    map_depth: Array
-    map_depth_RJ: Array
+    map_depth: MapDepth
+    map_depth_RJ: MapDepth
+
+    def to_dataset(self, element_names: list[str]) -> xr.Dataset:
+        """Convert to an xarray Dataset with labeled dimensions and units.
+
+        Unit metadata is read from ``pint.Unit`` annotations on each
+        field's type hint. Element-level fields are inferred from array
+        shape (leading dimension == number of elements).
+        """
+        n_elem = len(element_names)
+        hints = get_type_hints(type(self), include_extras=True)
+        data_vars = {}
+
+        for name, hint in hints.items():
+            arr = np.asarray(getattr(self, name))
+
+            unit_obj = next(
+                (
+                    a
+                    for a in getattr(hint, "__metadata__", [])
+                    if isinstance(a, pint.Unit)
+                ),
+                None,
+            )
+
+            attrs = {}
+            if unit_obj is not None:
+                base_unit = ureg.Quantity(1.0, unit_obj).to_base_units().units
+                arr = ureg.Quantity(arr, base_unit).to(unit_obj).magnitude
+                attrs["units"] = str(unit_obj)
+
+            has_elem_dim = arr.ndim >= 1 and arr.shape[0] == n_elem
+            if has_elem_dim:
+                dims = ["element"] + [f"dim_{i}" for i in range(arr.ndim - 1)]
+                coords = {"element": element_names}
+            else:
+                dims = [f"dim_{i}" for i in range(arr.ndim)]
+                coords = {}
+
+            data_vars[name] = xr.DataArray(arr, dims=dims, coords=coords, attrs=attrs)
+
+        return xr.Dataset(data_vars)
 
 
 def resolve_psat(psat: Array, psat_factor: Array, opt_pow: Array) -> Array:
@@ -242,30 +251,30 @@ def trj_over_tcmb(freqs: Array) -> Array:
 
 
 @eqx.filter_jit
-def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityResult:
+def compute_sensitivity(experiment: Experiment) -> SensitivityResult:
     """Pure, jax-traceable sensitivity computation.
 
-    Loops over ``optics.elements`` calling each element's
+    Loops over instrument elements calling each element's
     ``emiss_trans(freqs)`` to compute emissivity and transmission,
     then accumulates power contributions through the optical chain.
 
     Args:
-        optics: Optical chain state with typed elements
-        params: Bolometer and observation parameters
+        experiment: ``Experiment`` pytree (instrument + survey params)
 
     Returns:
         SensitivityResult pytree with all computed quantities
     """
-    freqs = optics.freqs
-    bandwidth = optics.bandwidth
-    n_sky = optics.n_sky
+    inst = experiment.instrument
+    freqs = inst.freqs
+    bandwidth = inst.bandwidth
+    n_sky = sum(isinstance(e, SkySource) for e in inst.elements.values())
 
     # Compute per-element emissivity and transmission via polymorphic dispatch.
     # The for-loop unrolls at trace time (pytree structure is static).
     emiss_list = []
     trans_list = []
     power_list = []
-    for elem in optics.elements.values():
+    for elem in inst.elements.values():
         e, t = elem.emiss_trans(freqs)
         emiss_list.append(e)
         trans_list.append(t)
@@ -320,26 +329,24 @@ def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityR
     sky_rj_temp = physics.rj_temp(sky_power, bandwidth, tel_effic)
 
     # Bolometer thermal NEP
-    psat = resolve_psat(params.psat, params.psat_factor, opt_power)
-    G_val = compute_G(params.G, psat, params.carrier_index, params.bath_temp, params.Tc)
-    flink = compute_Flink(
-        params.Flink, params.carrier_index, params.bath_temp, params.Tc
-    )
-    NEP_bolo = noise.bolo_NEP(flink, G_val, params.Tc)
+    psat = resolve_psat(inst.psat, inst.psat_factor, opt_power)
+    G_val = compute_G(inst.G, psat, inst.carrier_index, inst.bath_temp, inst.Tc)
+    flink = compute_Flink(inst.Flink, inst.carrier_index, inst.bath_temp, inst.Tc)
+    NEP_bolo = noise.bolo_NEP(flink, G_val, inst.Tc)
 
     # Photon NEP (shot + wave noise, with Bose correlations)
     NEP_ph, NEP_ph_corr = photon_nep(
-        elem_power_to_det_by_freq, freqs, optics.corr_factors
+        elem_power_to_det_by_freq, freqs, inst.corr_factors
     )
 
     # Readout NEP (full calculation or read_frac fallback)
     NEP_read = compute_read_nep(
-        params.squid_nei,
-        params.bolo_R,
-        params.response_factor,
+        inst.squid_nei,
+        inst.bolo_R,
+        inst.response_factor,
         psat,
         opt_power,
-        params.read_frac,
+        inst.read_frac,
         NEP_bolo,
         NEP_ph,
     )
@@ -351,8 +358,8 @@ def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityR
     )
 
     # Convert NEP to NET (noise equivalent temperature)
-    NET = noise.NET_from_NEP(NEP, freqs, chan_effic, params.optical_coupling)
-    NET_corr = noise.NET_from_NEP(NEP_corr, freqs, chan_effic, params.optical_coupling)
+    NET = noise.NET_from_NEP(NEP, freqs, chan_effic, inst.optical_coupling)
+    NET_corr = noise.NET_from_NEP(NEP_corr, freqs, chan_effic, inst.optical_coupling)
 
     # Convert from CMB temperature to RJ temperature
     Trj_factor = trj_over_tcmb(freqs)
@@ -360,15 +367,17 @@ def compute_sensitivity(optics: OpticsState, params: BoloParams) -> SensitivityR
     NET_corr_RJ = Trj_factor * NET_corr
 
     # Array NET: per-detector NET scaled by sqrt(n_det * yield)
-    ndet_f = jnp.asarray(params.ndet, dtype=jnp.float64)
-    NET_arr = params.NET_scale * noise.NET_arr(NET, ndet_f, params.det_yield)
-    NET_arr_RJ = params.NET_scale * noise.NET_arr(NET_RJ, ndet_f, params.det_yield)
+    ndet_f = jnp.asarray(inst.ndet, dtype=jnp.float64)
+    NET_arr = experiment.NET_scale * noise.NET_arr(NET, ndet_f, inst.det_yield)
+    NET_arr_RJ = experiment.NET_scale * noise.NET_arr(NET_RJ, ndet_f, inst.det_yield)
 
     # Correlation factor and map depth
     corr_fact = NET_corr / NET
-    map_depth = noise.map_depth(NET_arr, params.fsky, params.obs_time, params.obs_effic)
+    map_depth = noise.map_depth(
+        NET_arr, experiment.fsky, experiment.obs_time, experiment.obs_effic
+    )
     map_depth_RJ = noise.map_depth(
-        NET_arr_RJ, params.fsky, params.obs_time, params.obs_effic
+        NET_arr_RJ, experiment.fsky, experiment.obs_time, experiment.obs_effic
     )
 
     # Broadcast P_sat, G, Flink to match NET shape for output consistency

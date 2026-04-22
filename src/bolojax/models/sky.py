@@ -21,7 +21,7 @@ from bolojax.models.params import Var
 from bolojax.models.utils import cfg_path, is_not_none
 
 if TYPE_CHECKING:
-    from bolojax.models.instrument import Instrument
+    from bolojax.models.instrument import InstrumentConfig
 
 GHz_to_Hz = 1.0e09
 
@@ -215,19 +215,19 @@ class Atmosphere(BolojaxModel):
     The primary backend is ``AmAtm``, which computes atmosphere profiles
     from an ``.amc`` configuration file using am-python and caches the
     results to disk.  A fixed-profile text file can be used as a
-    fallback via ``custom_atm_file`` on the Instrument.
+    fallback via ``custom_atm_file`` on the InstrumentConfig.
     """
 
     amc_file: str | None = None
     amc_args: list[str | float] | None = None
     profile_pwv_mm: float = 0.425
 
-    _telescope: Instrument | None = PrivateAttr(default=None)
+    _telescope: InstrumentConfig | None = PrivateAttr(default=None)
     _sampled_pwv: np.ndarray | None = PrivateAttr(default=None)
     _sampled_elev: np.ndarray | None = PrivateAttr(default=None)
     _nsamples: int = PrivateAttr(default=1)
 
-    def set_telescope(self, value: Instrument) -> None:
+    def set_telescope(self, value: InstrumentConfig) -> None:
         """Set the telescope (needed to sample elevation and PWV values)."""
         self._telescope = value
 

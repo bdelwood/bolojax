@@ -14,7 +14,7 @@ from bolojax.models.params import Var
 from bolojax.models.utils import is_not_none
 
 if TYPE_CHECKING:
-    from bolojax.models.channel import Channel
+    from bolojax.models.channel import ChannelConfig
 
 
 class ChannelResults:
@@ -142,7 +142,7 @@ class OpticalElement(BolojaxModel):
         return results_
 
     def compute_channel(
-        self, channel: Channel, freqs: np.ndarray, nsample: int
+        self, channel: ChannelConfig, freqs: np.ndarray, nsample: int
     ) -> tuple[
         float | np.ndarray | None, float | np.ndarray | None, float | np.ndarray | None
     ]:
@@ -154,7 +154,7 @@ class OpticalElement(BolojaxModel):
         return results_()
 
     def calc_abso(
-        self, channel: Channel, freqs: np.ndarray, nsample: int
+        self, channel: ChannelConfig, freqs: np.ndarray, nsample: int
     ) -> float | np.ndarray:
         """Compute the absorption for a given channel."""
         return self.absorption.sample(nsample, freqs, channel.idx)
@@ -167,7 +167,7 @@ class Mirror(OpticalElement):
     conductivity: Var() = None
 
     def calc_abso(
-        self, channel: Channel, freqs: np.ndarray, nsample: int
+        self, channel: ChannelConfig, freqs: np.ndarray, nsample: int
     ) -> float | np.ndarray:
         if is_not_none(self.conductivity) and np.isfinite(self.conductivity.SI).all():
             return 1.0 - physics.ohmic_eff(freqs, self.conductivity.SI)
@@ -183,7 +183,7 @@ class Dielectric(OpticalElement):
     loss_tangent: Var() = None
 
     def calc_abso(
-        self, channel: Channel, freqs: np.ndarray, nsample: int
+        self, channel: ChannelConfig, freqs: np.ndarray, nsample: int
     ) -> float | np.ndarray:
         if (
             is_not_none(self.thickness)
@@ -202,7 +202,7 @@ class ApertureStop(OpticalElement):
     type: Literal["aperture_stop"] = "aperture_stop"
 
     def calc_abso(
-        self, channel: Channel, freqs: np.ndarray, nsample: int
+        self, channel: ChannelConfig, freqs: np.ndarray, nsample: int
     ) -> float | np.ndarray:
         pixel_size = channel.pixel_size()
         f_number = channel.camera.f_number()

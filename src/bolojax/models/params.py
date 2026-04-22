@@ -1,28 +1,28 @@
 """Configuration field types for bolojax.
 
-Provides ParamHolder, VariableHolder, OutputField, OutputHolder, and the
-``Var`` / ``Out`` pydantic annotation helpers.
+Provides ParamHolder, VariableHolder, and the ``Var`` pydantic
+annotation helper. Unit conversion is handled by pint.
 """
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Annotated, Any, Literal
 
 import numpy as np
+import pint
 import scipy.stats as sps
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
 from bolojax.models.interp import FreqInterp
 from bolojax.models.pdf import ChoiceDist
-from bolojax.models.unit import Unit
+from bolojax.models.unit import ureg
 from bolojax.models.utils import cfg_path, is_none
 
 
 class ParamHolder:
-    """Container for a parameter value with unit conversion."""
+    """Container for a parameter value with unit conversion via pint."""
 
     def __init__(self, **kwargs: Any) -> None:
         value = kwargs.get("value", np.nan)
@@ -34,9 +34,9 @@ class ParamHolder:
         self.scale: np.ndarray = np.asarray(kwargs.get("scale", 1.0), dtype=float)
         self.free: np.ndarray = np.asarray(kwargs.get("free", False), dtype=bool)
         unit = kwargs.get("unit")
-        if isinstance(unit, str | int | float):
-            unit = Unit(unit)
-        self.unit: Unit | None = unit
+        if isinstance(unit, str):
+            unit = ureg.Unit(unit)
+        self.unit: pint.Unit | None = unit
 
     @property
     def scaled(self) -> np.ndarray:
@@ -45,22 +45,26 @@ class ParamHolder:
 
     @property
     def SI(self) -> np.ndarray:
-        """Return the value in SI units."""
+        """Return the value in SI base units."""
         return self()
 
     def __call__(self) -> np.ndarray:
-        """Return the value converted to SI units."""
+        """Return the value converted to SI base units."""
         base_val = self.scaled
         if self.unit is None:
             return base_val
-        return self.unit(base_val)
+        q = ureg.Quantity(base_val, self.unit)
+        return np.asarray(q.to_base_units().magnitude, dtype=float)
 
     def set_from_SI(self, val: np.ndarray) -> None:
         """Set the value from an SI-unit quantity."""
         if self.unit is None:
             self.value = val
             return
-        self.value = self.unit.inverse(val)
+        # Convert from SI base units back to the declared unit
+        base_unit = ureg.Quantity(1.0, self.unit).to_base_units().units
+        q = ureg.Quantity(val, base_unit)
+        self.value = np.asarray(q.to(self.unit).magnitude, dtype=float)
 
 
 class VariableHolder(ParamHolder):
@@ -162,15 +166,31 @@ class VariableHolder(ParamHolder):
 
 
 class _VarValidator:
-    """Pydantic annotation that converts raw YAML values to VariableHolder."""
+    """Pydantic annotation that converts raw YAML values to VariableHolder.
+
+    Handles three input forms:
+    - Scalar (int/float): treated as a value in the declared unit
+    - String with units (``"25 mm"``): parsed by pint, converted to declared unit
+    - Dict (``{value: ..., var_type: gauss, ...}``): full VariableHolder config
+    """
 
     def __init__(self, unit: str | None = None) -> None:
-        self._unit: Unit | None = Unit(unit) if unit else None
+        self._unit: pint.Unit | None = ureg.Unit(unit) if unit else None
+
+    def _parse_value(self, v: Any) -> float:
+        """Parse a scalar or unit-string value into the declared unit."""
+        if isinstance(v, str):
+            q = ureg.Quantity(v)
+            if self._unit is not None:
+                q = q.to(self._unit)
+            return float(q.magnitude)
+        return v
 
     def __get_pydantic_core_schema__(
         self, source_type: type, handler: GetCoreSchemaHandler
     ) -> CoreSchema:
         unit = self._unit
+        parse = self._parse_value
 
         def _validate(v: Any) -> VariableHolder:
             if isinstance(v, VariableHolder):
@@ -180,8 +200,12 @@ class _VarValidator:
                 kw["unit"] = unit
             if isinstance(v, Mapping):
                 kw.update(v)
+                if "value" in kw and isinstance(kw["value"], str):
+                    kw["value"] = parse(kw["value"])
             elif is_none(v):
                 kw.setdefault("value", np.nan)
+            elif isinstance(v, str):
+                kw["value"] = parse(v)
             else:
                 kw["value"] = v
             return VariableHolder(**kw)
@@ -199,97 +223,3 @@ def Var(unit: str | None = None) -> type[VariableHolder]:
         frac_bw: Var() = 0.35                # optional with value default
     """
     return Annotated[VariableHolder, _VarValidator(unit)]
-
-
-class OutputHolder(ParamHolder):
-    """ParamHolder for computed output values."""
-
-
-class OutputField:
-    """Descriptor for computed output values on the Sensitivity class."""
-
-    def __init__(self, unit: Unit | str | None = None) -> None:
-        if isinstance(unit, Unit):
-            self._unit_str: str | None = unit.name or None
-            self._unit: Unit | None = unit
-        elif isinstance(unit, str):
-            self._unit_str = unit
-            self._unit = Unit(unit)
-        else:
-            self._unit_str = None
-            self._unit = None
-        self.public_name: str | None = None
-        self.private_name: str | None = None
-
-    def __set_name__(self, owner: type, name: str) -> None:
-        self.public_name = name
-        self.private_name = "_" + name
-        # Build class-level registry of output fields
-        if (
-            not hasattr(owner, "_output_fields")
-            or "_output_fields" not in owner.__dict__
-        ):
-            owner._output_fields = {}
-        owner._output_fields[name] = self
-
-    def __get__(
-        self, obj: object, objtype: type | None = None
-    ) -> OutputField | OutputHolder | None:
-        if obj is None:
-            return self
-        return getattr(obj, self.private_name, None)
-
-    def __set__(self, obj: object, value: OutputHolder) -> None:
-        setattr(obj, self.private_name, value)
-
-    def make_holder(self) -> OutputHolder:
-        """Create an empty OutputHolder for this field."""
-        kw: dict[str, Unit] = {}
-        if self._unit is not None:
-            kw["unit"] = self._unit
-        return OutputHolder(**kw)
-
-    def summarize(self, obj: object) -> StatsSummary:
-        """Compute and return summary statistics."""
-        val = getattr(obj, self.private_name).value
-        return StatsSummary(self.public_name, val)
-
-    def summarize_by_element(self, obj: object) -> StatsSummary:
-        """Compute and return per-element summary statistics."""
-        val = getattr(obj, self.private_name).value
-        val = val.reshape((val.shape[0], np.prod(val.shape[1:])))
-        return StatsSummary(self.public_name, val, axis=1)
-
-
-class StatsSummary:
-    """Summarise the statistical properties of a computed parameter."""
-
-    def __init__(
-        self, name: str, vals: np.ndarray, unit_name: str = "", axis: int | None = None
-    ) -> None:
-        self._name: str = name
-        self._unit_name: str = unit_name
-        self._mean: np.ndarray = np.mean(vals, axis=axis)
-        self._median: np.ndarray = np.median(vals, axis=axis)
-        self._std: np.ndarray = np.std(vals, axis=axis)
-        self._quantiles: np.ndarray = np.quantile(
-            vals, [0.023, 0.159, 0.841, 0.977], axis=axis
-        )
-        self._deltas: np.ndarray = np.abs(self._quantiles - self._median)
-
-    def element_string(self, idx: int) -> str:
-        """Pretty representation of the stats for one element."""
-        return f"{self._mean[idx]:0.4f} +- [{self._deltas[1, idx]:0.4f} {self._deltas[2, idx]:0.4f}] {self._unit_name}"
-
-    def __str__(self) -> str:
-        """Pretty representation of the stats."""
-        return f"{self._mean:0.4f} +- [{self._deltas[1]:0.4f} {self._deltas[2]:0.4f}] {self._unit_name}"
-
-    def todict(self) -> OrderedDict[str, np.ndarray]:
-        """Put the summary stats into a dictionary."""
-        o_dict: OrderedDict[str, np.ndarray] = OrderedDict()
-        for vn in ["_mean", "_median", "_std"]:
-            o_dict[f"{self._name}{vn}"] = np.atleast_1d(self.__dict__[vn])
-        for idx, vn in enumerate(["_n_2_sig", "_n_1_sig", "_p_1_sig", "_p_2_sig"]):
-            o_dict[f"{self._name}{vn}"] = np.atleast_1d(self._deltas[idx])
-        return o_dict
