@@ -76,9 +76,7 @@ def soft_edge(r: ArrayLike, R: float, softening: float = 0.01) -> Array:
     return 0.5 * (1 - jnp.tanh((r - R) / softening))
 
 
-def poly_taper(
-    r: ArrayLike, a1: float, a2: float, n: float, softening: float = 0.01
-) -> Array:
+def poly_taper(r: ArrayLike, a1: float, a2: float, n: float) -> Array:
     r"""Polynomial taper beam: $(1 - a_1 r - a_2 r^2)^n$ with soft edge.
 
     The "bolocalc" preset parameters (a1=1.0825, a2=-0.0413, n=1.300) were
@@ -96,10 +94,8 @@ def poly_taper(
     Returns:
         Beam illumination intensity.
     """
-    inner = 1 - a1 * r - a2 * r**2
-    # Find root for the soft cutoff location
-    # For the default bolocalc params, root ~ 0.96
-    return jnp.abs(inner) ** n * soft_edge(inner, 0.0, softening)
+    inner = jnp.maximum(1 - a1 * r - a2 * r**2, 0.0)
+    return inner**n
 
 
 def trunc_gauss(r: ArrayLike, sigma: float, R: float, softening: float = 0.01) -> Array:
