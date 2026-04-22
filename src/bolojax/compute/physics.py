@@ -13,9 +13,13 @@ Tcmb (float): CMB Temperature [K]
 co (dict): CO Emission lines [Hz]
 """
 
+from __future__ import annotations
+
 import math
 
 import jax.numpy as jnp
+from jax import Array
+from jax.typing import ArrayLike
 
 h = 6.6261e-34
 kB = 1.3806e-23
@@ -27,19 +31,29 @@ Z0 = math.sqrt(mu0 / ep0)
 Tcmb = 2.725
 
 
-def lamb(freq, ind=1.0):
-    """
-    Convert from from frequency [Hz] to wavelength [m]
+def lamb(freq: ArrayLike, ind: ArrayLike = 1.0) -> Array:
+    """Convert from frequency [Hz] to wavelength [m].
 
     Args:
-    freq (float): frequencies [Hz]
-    ind: index of refraction. Defaults to 1
+        freq: frequencies [Hz]
+        ind: index of refraction. Defaults to 1.
+
+    Returns:
+        Wavelength [m].
     """
     return c / (freq * ind)
 
 
-def band_edges(freqs, tran):
-    """Find the -3 dB points of an arbitrary band."""
+def band_edges(freqs: Array, tran: Array) -> tuple[Array, Array]:
+    """Find the -3 dB points of an arbitrary band.
+
+    Args:
+        freqs: frequency grid [Hz].
+        tran: transmission profile on ``freqs``.
+
+    Returns:
+        Tuple of (flo, fhi) at the half-max points.
+    """
     max_tran = jnp.amax(tran)
     max_tran_loc = jnp.argmax(tran)
     lo_point = jnp.argmin(abs(tran[:max_tran_loc] - 0.5 * max_tran))
@@ -49,42 +63,50 @@ def band_edges(freqs, tran):
     return flo, fhi
 
 
-def spill_eff(freq, pixd, fnum, wf=3.0):
-    """
-    Pixel beam coupling efficiency given a frequency [Hz],
-    pixel diameter [m], f-number, and beam wasit factor
+def spill_eff(
+    freq: ArrayLike, pixd: ArrayLike, fnum: ArrayLike, wf: ArrayLike = 3.0
+) -> Array:
+    """Pixel beam coupling efficiency.
 
     Args:
-    freq (float): frequencies [Hz]
-    pixd (float): pixel size [m]
-    fnum (float): f-number
-    wf (float): waist factor. Defaults to 3.
+        freq: frequencies [Hz].
+        pixd: pixel size [m].
+        fnum: f-number.
+        wf: waist factor. Defaults to 3.
+
+    Returns:
+        Spillover efficiency.
     """
     return 1.0 - jnp.exp(
         (-jnp.power(PI, 2) / 2.0) * jnp.power((pixd / (wf * fnum * (c / freq))), 2)
     )
 
 
-def edge_taper(ap_eff):
-    """
-    Edge taper given an aperture efficiency
+def edge_taper(ap_eff: ArrayLike) -> Array:
+    """Edge taper given an aperture efficiency.
 
     Args:
-    ap_eff (float): aperture efficiency
+        ap_eff: aperture efficiency.
+
+    Returns:
+        Edge taper [dB].
     """
     return 10.0 * jnp.log10(1.0 - ap_eff)
 
 
-def apert_illum(freq, pixd, fnum, wf=3.0):
-    """
-    Aperture illumination efficiency given a frequency [Hz],
-    pixel diameter [m], f-number, and beam waist factor
+def apert_illum(
+    freq: ArrayLike, pixd: ArrayLike, fnum: ArrayLike, wf: ArrayLike = 3.0
+) -> Array:
+    """Aperture illumination efficiency.
 
     Args:
-    freq (float): frequencies [Hz]
-    pixd (float): pixel diameter [m]
-    fnum (float): f-number
-    wf (float): beam waist factor
+        freq: frequencies [Hz].
+        pixd: pixel diameter [m].
+        fnum: f-number.
+        wf: beam waist factor.
+
+    Returns:
+        Aperture illumination efficiency.
     """
     lamb_val = lamb(freq)
     w0 = pixd / wf
@@ -97,152 +119,187 @@ def apert_illum(freq, pixd, fnum, wf=3.0):
     return (eff_num / eff_denom) * eff_fact
 
 
-def ruze_eff(freq, sigma):
-    """
-    Ruze efficiency given a frequency [Hz] and surface RMS roughness [m]
+def ruze_eff(freq: ArrayLike, sigma: ArrayLike) -> Array:
+    """Ruze efficiency given frequency and surface RMS roughness.
 
     Args:
-    freq (float): frequencies [Hz]
-    sigma (float): RMS surface roughness
+        freq: frequencies [Hz].
+        sigma: RMS surface roughness [m].
+
+    Returns:
+        Ruze efficiency.
     """
     return jnp.exp(-jnp.power(4 * PI * sigma / (c / freq), 2.0))
 
 
-def ohmic_eff(freq, sigma):
-    """
-    Ohmic efficiency given a frequency [Hz] and conductivity [S/m]
+def ohmic_eff(freq: ArrayLike, sigma: ArrayLike) -> Array:
+    """Ohmic efficiency given frequency and conductivity.
 
     Args:
-    freq (float): frequencies [Hz]
-    sigma (float): conductivity [S/m]
+        freq: frequencies [Hz].
+        sigma: conductivity [S/m].
+
+    Returns:
+        Ohmic efficiency.
     """
     return 1.0 - 4.0 * jnp.sqrt(PI * freq * mu0 / sigma) / Z0
 
 
-def Trj_over_Tb(freq, Tb):
-    r"""
-    Ratio $dT_{\mathrm{RJ}} / dT_b$ for a given physical temperature and frequency.
+def Trj_over_Tb(freq: ArrayLike, Tb: ArrayLike) -> Array:
+    r"""Ratio $dT_{\mathrm{RJ}} / dT_b$ for a given physical temperature and frequency.
 
     Args:
-    freq (float): frequencies [Hz]
-    Tb (float): physical temperature. Default to Tcmb
+        freq: frequencies [Hz].
+        Tb: physical temperature [K].
+
+    Returns:
+        Rayleigh-Jeans to physical temperature derivative.
     """
     x = (h * freq) / (Tb * kB)
     thermo_fact = jnp.power((jnp.exp(x) - 1.0), 2.0) / (jnp.power(x, 2.0) * jnp.exp(x))
     return 1.0 / thermo_fact
 
 
-def Tb_from_spec_rad(freq, pow_spec):
-    r"""Physical temperature from spectral radiance $[\mathrm{W}/(\mathrm{m}^2\,\mathrm{sr}\,\mathrm{Hz})]$."""
+def Tb_from_spec_rad(freq: ArrayLike, pow_spec: ArrayLike) -> Array:
+    r"""Physical temperature from spectral radiance $[\mathrm{W}/(\mathrm{m}^2\,\mathrm{sr}\,\mathrm{Hz})]$.
+
+    Args:
+        freq: frequencies [Hz].
+        pow_spec: spectral radiance.
+
+    Returns:
+        Physical temperature [K].
+    """
     return (h * freq / kB) / jnp.log((2 * h * (freq**3 / c**2) / pow_spec) + 1)
 
 
-def Tb_from_Trj(freq, Trj):
-    """Physical temperature from Rayleigh-Jeans temperature."""
+def Tb_from_Trj(freq: ArrayLike, Trj: ArrayLike) -> Array:
+    """Physical temperature from Rayleigh-Jeans temperature.
+
+    Args:
+        freq: frequencies [Hz].
+        Trj: Rayleigh-Jeans temperature [K].
+
+    Returns:
+        Physical temperature [K].
+    """
     alpha = (h * freq) / kB
     return alpha / jnp.log((2 * alpha / Trj) + 1)
 
 
-def inv_var(err):
-    """
-    Inverse variance weights based on input errors
+def inv_var(err: ArrayLike) -> Array:
+    """Inverse variance weights based on input errors.
 
     Args:
-    err (float): errors to generate weights
+        err: errors to generate weights.
+
+    Returns:
+        Inverse-variance-weighted combination.
     """
     return 1.0 / (jnp.sqrt(jnp.sum(1.0 / (jnp.power(jnp.asarray(err), 2.0)))))
 
 
-def dielectric_loss(freq, thick, ind, ltan):
-    """
-    The dielectric loss of a substrate given the frequency [Hz],
-    substrate thickness [m], index of refraction, and loss tangent
+def dielectric_loss(
+    freq: ArrayLike, thick: ArrayLike, ind: ArrayLike, ltan: ArrayLike
+) -> Array:
+    """Dielectric loss of a substrate.
 
     Args:
-    freq (float): frequencies [Hz]
-    thick (float): substrate thickness [m]
-    ind (float): index of refraction
-    ltan (float): loss tangent
+        freq: frequencies [Hz].
+        thick: substrate thickness [m].
+        ind: index of refraction.
+        ltan: loss tangent.
+
+    Returns:
+        Fractional dielectric loss.
     """
     return 1.0 - jnp.exp((-2.0 * PI * ind * ltan * thick) / (lamb(freq)))
 
 
-def rj_temp(powr, bw, eff=1.0):
-    r"""
-    Rayleigh-Jeans temperature given power, bandwidth, and efficiency.
+def rj_temp(powr: ArrayLike, bw: ArrayLike, eff: ArrayLike = 1.0) -> Array:
+    r"""Rayleigh-Jeans temperature given power, bandwidth, and efficiency.
 
     Returns temperature in $K_{\mathrm{RJ}}$.
 
     Args:
-    powr (float): power [W]
-    bw (float): bandwidth [Hz]
-    eff (float): efficiency
+        powr: power [W].
+        bw: bandwidth [Hz].
+        eff: efficiency. Defaults to 1.
+
+    Returns:
+        Rayleigh-Jeans temperature [K].
     """
     return powr / (kB * bw * eff)
 
 
-def n_occ(freq, temp):
-    """
-    Photon occupation number given a frequency [Hz] and
-    blackbody temperature [K]
+def n_occ(freq: ArrayLike, temp: ArrayLike) -> Array:
+    """Photon occupation number given frequency and blackbody temperature.
 
-    freq (float): frequency [Hz]
-    temp (float): blackbody temperature [K]
+    Args:
+        freq: frequency [Hz].
+        temp: blackbody temperature [K].
+
+    Returns:
+        Bose-Einstein occupation number.
     """
     fact = (h * freq) / (kB * temp)
     fact = jnp.where(fact > 100, 100, fact)
     return 1.0 / (jnp.exp(fact) - 1.0)
 
 
-def a_omega(freq):
-    r"""
-    Throughput $[\mathrm{m}^2]$ for a diffraction-limited detector
-    given the frequency [Hz]
+def a_omega(freq: ArrayLike) -> Array:
+    r"""Throughput $[\mathrm{m}^2]$ for a diffraction-limited detector.
 
     Args:
-    freq (float): frequencies [Hz]
+        freq: frequencies [Hz].
+
+    Returns:
+        Throughput ($\lambda^2$).
     """
     return lamb(freq) ** 2
 
 
-def bb_spec_rad(freq, temp, emis=1.0):
-    r"""
-    Blackbody spectral radiance $[\mathrm{W}/(\mathrm{m}^2\,\mathrm{sr}\,\mathrm{Hz})]$ given a frequency [Hz],
-    blackbody temperature [K], and blackbody emissivity
+def bb_spec_rad(freq: ArrayLike, temp: ArrayLike, emis: ArrayLike = 1.0) -> Array:
+    r"""Blackbody spectral radiance $[\mathrm{W}/(\mathrm{m}^2\,\mathrm{sr}\,\mathrm{Hz})]$.
 
     Args:
-    freq (float): frequencies [Hz]
-    temp (float): blackbody temperature [K]
-    emiss (float): blackbody emissivity. Defaults to 1.
+        freq: frequencies [Hz].
+        temp: blackbody temperature [K].
+        emis: blackbody emissivity. Defaults to 1.
+
+    Returns:
+        Spectral radiance.
     """
     return emis * (2 * h * (freq**3) / (c**2)) * n_occ(freq, temp)
 
 
-def bb_pow_spec(freq, temp, emis=1.0):
-    """
-    Blackbody power spectrum [W/Hz] on a diffraction-limited polarimeter
-    for a frequency [Hz], blackbody temperature [K],
-    and blackbody emissivity
+def bb_pow_spec(freq: ArrayLike, temp: ArrayLike, emis: ArrayLike = 1.0) -> Array:
+    """Blackbody power spectrum [W/Hz] on a diffraction-limited polarimeter.
 
     Args:
-    freq (float): frequencies [Hz]
-    temp (float): blackbody temperature [K]
-    emiss (float): blackbody emissivity. Defaults to 1.
+        freq: frequencies [Hz].
+        temp: blackbody temperature [K].
+        emis: blackbody emissivity. Defaults to 1.
+
+    Returns:
+        Power spectral density [W/Hz].
     """
     return 0.5 * a_omega(freq) * bb_spec_rad(freq, temp, emis)
 
 
-def ani_pow_spec(freq, temp, emiss=1.0):
-    r"""
-    Derivative of blackbody power spectrum with respect to blackbody
-    temperature, $dP/dT$, on a diffraction-limited detector [W/K] given
-    a frequency [Hz], blackbody temperature [K], and blackbody
-    emissivity
+def ani_pow_spec(freq: ArrayLike, temp: ArrayLike, emiss: ArrayLike = 1.0) -> Array:
+    r"""Derivative of blackbody power spectrum, $dP/dT$ [W/K].
+
+    Evaluated on a diffraction-limited detector given a frequency,
+    blackbody temperature, and emissivity.
 
     Args:
-    freq (float): frequency [Hz]
-    temp (float): blackbody temperature [K]
-    emiss (float): blackbody emissivity, Defaults to 1.
+        freq: frequency [Hz].
+        temp: blackbody temperature [K].
+        emiss: blackbody emissivity. Defaults to 1.
+
+    Returns:
+        Power derivative with respect to temperature [W/K].
     """
     return (
         emiss
@@ -252,6 +309,15 @@ def ani_pow_spec(freq, temp, emiss=1.0):
     )
 
 
-def pow_frac(T1, T2, freqs):
-    """Fractional power between two physical temperatures."""
+def pow_frac(T1: ArrayLike, T2: ArrayLike, freqs: ArrayLike) -> Array:
+    """Fractional power between two physical temperatures.
+
+    Args:
+        T1: first temperature [K].
+        T2: second temperature [K].
+        freqs: frequencies [Hz].
+
+    Returns:
+        Power ratio P(T1)/P(T2).
+    """
     return bb_pow_spec(freqs, T1) / bb_pow_spec(freqs, T2)

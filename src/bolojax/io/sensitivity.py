@@ -8,30 +8,41 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, TextIO
 
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 
 from bolojax.compute.sensitivity import BoloParams, OpticsState, compute_sensitivity
-from bolojax.models.params import OutputField
+from bolojax.models.params import OutputField, StatsSummary
+
+if TYPE_CHECKING:
+    from astropy.table import Table
+
+    from bolojax.io.tables import TableDict
+    from bolojax.models.channel import Channel
 
 
-def _bcast_list(array_list):
+def _bcast_list(array_list: list) -> Array:
     """Broadcast a list of arrays and stack along axis 0."""
     arrays = [jnp.asarray(a, dtype=jnp.float64) for a in array_list]
     broadcasted = jnp.broadcast_arrays(*arrays)
     return jnp.stack(broadcasted, axis=0)
 
 
-def build_params(channel):
+def build_params(channel: Channel) -> tuple[OpticsState, BoloParams, list[str]]:
     """Extract JAX pytrees from a configured Channel.
 
     Call after ``instrument.eval_sky()`` and ``instrument.eval_instrument()``
     have populated the channel's sky and optical chain data.
 
+    Args:
+        channel: a configured Channel instance.
+
     Returns:
-        (OpticsState, BoloParams) ready for :func:`compute_sensitivity`.
+        ``(OpticsState, BoloParams, elem_names)`` ready for
+        :func:`compute_sensitivity`.
     """
     camera = channel.camera
     instrument = camera.instrument
@@ -181,7 +192,7 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         "elem_power_to_det",
     ]
 
-    def __init__(self, channel):
+    def __init__(self, channel: Channel) -> None:
         # Initialize all output holders
         for field in type(self)._output_fields.values():
             setattr(self, field.private_name, field.make_holder())
@@ -208,28 +219,29 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         self.summarize()
         self.analyze_optical_chain()
 
-    def summarize(self):
+    def summarize(self) -> OrderedDict[str, StatsSummary]:
         """Compute and cache summary statistics."""
-        self._summary = OrderedDict()
+        self._summary: OrderedDict[str, StatsSummary] = OrderedDict()
         for key in self.summary_fields:
             self._summary[key] = type(self)._output_fields[key].summarize(self)
         return self._summary
 
-    def analyze_optical_chain(self):
+    def analyze_optical_chain(self) -> OrderedDict[str, StatsSummary]:
         """Compute and cache optical output statistics."""
-        self._optical_output = OrderedDict()
+        self._optical_output: OrderedDict[str, StatsSummary] = OrderedDict()
         for key in self.optical_output_fields:
             self._optical_output[key] = (
                 type(self)._output_fields[key].summarize_by_element(self)
             )
         return self._optical_output
 
-    def print_summary(self, stream=sys.stdout):
+    def print_summary(self, stream: TextIO = sys.stdout) -> None:
         """Print summary statistics in human-readable format."""
-        for key, val in self._summary.items():
-            stream.write(f"{key.ljust(20)} : {val}\n")
+        stream.writelines(
+            f"{key.ljust(20)} : {val}\n" for key, val in self._summary.items()
+        )
 
-    def print_optical_output(self, stream=sys.stdout):
+    def print_optical_output(self, stream: TextIO = sys.stdout) -> None:
         """Print optical output statistics in human-readable format."""
         elem_power_from_sky = self._optical_output["elem_power_from_sky"]
         elem_power_to_det = self._optical_output["elem_power_to_det"]
@@ -238,12 +250,12 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
         stream.write(
             f"{'Element'.ljust(20)} | {'Power from Sky [pW]'.ljust(26)} | {'Power to Det [pW]'.ljust(26)} | {'Efficiency'.ljust(26)} | {'Cumul. Effic.'.ljust(26)}\n"
         )
-        for idx, elem in enumerate(self._elem_names):
-            stream.write(
-                f"{elem.ljust(20)} | {elem_power_from_sky.element_string(idx)} | {elem_power_to_det.element_string(idx)} | {elem_effic.element_string(idx)} | {elem_cumul_effic.element_string(idx)}\n"
-            )
+        stream.writelines(
+            f"{elem.ljust(20)} | {elem_power_from_sky.element_string(idx)} | {elem_power_to_det.element_string(idx)} | {elem_effic.element_string(idx)} | {elem_cumul_effic.element_string(idx)}\n"
+            for idx, elem in enumerate(self._elem_names)
+        )
 
-    def make_sims_table(self, name, table_dict):
+    def make_sims_table(self, name: str, table_dict: TableDict) -> Table:
         """Make a table with per-simulation parameters."""
         o_dict = OrderedDict(
             [
@@ -259,24 +271,26 @@ class Sensitivity:  # pylint: disable=too-many-instance-attributes
                 s += f"{k} {v.size}, "
             raise ValueError(s) from msg
 
-    def make_optical_table(self, name, table_dict):
+    def make_optical_table(self, name: str, table_dict: TableDict) -> Table:
         """Make a table with optical output parameters."""
-        o_dict = OrderedDict()
+        o_dict: OrderedDict[str, np.ndarray] = OrderedDict()
         for val in self._optical_output.values():
             o_dict.update(val.todict())
         o_dict["element"] = np.array(self._elem_names)
         o_dict["channel"] = np.array([self._channel_name] * len(self._elem_names))
         return table_dict.make_datatable(name, o_dict)
 
-    def make_sum_table(self, name, table_dict):
+    def make_sum_table(self, name: str, table_dict: TableDict) -> Table:
         """Make a table with summary parameters."""
-        o_dict = OrderedDict()
+        o_dict: OrderedDict[str, np.ndarray] = OrderedDict()
         for val in self._summary.values():
             o_dict.update(val.todict())
         o_dict["channel"] = np.array([self._channel_name])
         return table_dict.make_datatable(name, o_dict)
 
-    def make_tables(self, base_name, table_dict, **kwargs):
+    def make_tables(
+        self, base_name: str, table_dict: TableDict, **kwargs: bool
+    ) -> TableDict:
         """Make output tables."""
         if kwargs.get("save_sim", True):
             self.make_sims_table(f"{base_name}_sims", table_dict)

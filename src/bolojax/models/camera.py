@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from bolojax.compute.noise import Noise
 from bolojax.models.channel import Channel
 from bolojax.models.params import Var
+from bolojax.models.sky import Universe
 from bolojax.models.utils import is_not_none
+
+if TYPE_CHECKING:
+    from bolojax.models.instrument import Instrument
+    from bolojax.models.optics import OpticalElement
 
 
 class Camera(BaseModel):
@@ -31,12 +36,12 @@ class Camera(BaseModel):
     # Channels built from chan_config during construction
     channels: dict[str, Channel] = Field(default_factory=dict)
 
-    _optics: Any = PrivateAttr(default=None)
-    _instrument: Any = PrivateAttr(default=None)
+    _optics: OrderedDict[str, OpticalElement] | None = PrivateAttr(default=None)
+    _instrument: Instrument | None = PrivateAttr(default=None)
     _name: str | None = PrivateAttr(default=None)
-    _noise_calc: Any = PrivateAttr(default=None)
+    _noise_calc: Noise | None = PrivateAttr(default=None)
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context: object) -> None:
         # Build the noise calculator with the configured beam model
         self._noise_calc = Noise(beam_preset=self.beam_model)
 
@@ -49,23 +54,23 @@ class Camera(BaseModel):
             self.channels = channels
 
     @property
-    def noise_calc(self):
+    def noise_calc(self) -> Noise | None:
         """Return the noise calculator for this camera."""
         return self._noise_calc
 
     @property
-    def optics(self):
+    def optics(self) -> OrderedDict[str, OpticalElement] | None:
         return self._optics
 
     @property
-    def name(self):
+    def name(self) -> str | None:
         return self._name
 
     @name.setter
-    def name(self, value):
+    def name(self, value: str | None) -> None:
         self._name = value
 
-    def set_parent(self, instrument, name):
+    def set_parent(self, instrument: Instrument, name: str) -> None:
         """Pass information from the parent instrument down the food chain."""
         self._instrument = instrument
         self._name = name
@@ -78,17 +83,21 @@ class Camera(BaseModel):
         for idx, chan in enumerate(self.channels.values()):
             chan.set_camera(self, idx)
 
-    def sample(self, nsamples=0):
+    def sample(self, nsamples: int = 0) -> None:
         """Sample parameters in all the channels."""
         for chan in self.channels.values():
             chan.sample(nsamples)
 
-    def eval_optical_chains(self, nsamples=0, freq_resol=None):
+    def eval_optical_chains(
+        self, nsamples: int = 0, freq_resol: float | None = None
+    ) -> None:
         """Compute the performance of the elements of the optical chain for each channel."""
         for chan in self.channels.values():
             chan.eval_optical_chain(nsamples, freq_resol)
 
-    def eval_sky(self, universe, nsamples=0, freq_resol=None):
+    def eval_sky(
+        self, universe: Universe, nsamples: int = 0, freq_resol: float | None = None
+    ) -> None:
         """Compute parameters related to the sky that depend on the particular camera.
 
         If ``pixel_elevation`` is configured, each channel gets the
@@ -105,13 +114,15 @@ class Camera(BaseModel):
         for chan in self.channels.values():
             chan.eval_sky(universe, freq_resol, elevation=elevation)
 
-    def eval_det_response(self, nsample=0, freq_resol=None):
+    def eval_det_response(
+        self, nsample: int = 0, freq_resol: float | None = None
+    ) -> None:
         """Compute the performance of the detectors of the optical chain."""
         for chan in self.channels.values():
             chan.eval_det_response(nsample, freq_resol)
 
     @property
-    def instrument(self):
+    def instrument(self) -> Instrument | None:
         """Return the parent instrument."""
         return self._instrument
 

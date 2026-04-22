@@ -2,6 +2,8 @@
 Interpolates quantities vs frequency
 """
 
+from __future__ import annotations
+
 import numpy as np
 
 from bolojax.models.utils import is_none, read_txt_to_np
@@ -15,28 +17,31 @@ class FreqInterp:
     for detectors and optics
     """
 
-    def __init__(self, fname):
+    def __init__(self, fname: str) -> None:
         """Constructor"""
-        self.fname = fname
-        band_data = read_txt_to_np(self.fname)
+        self.fname: str = fname
+        band_data: np.ndarray = read_txt_to_np(self.fname)
         if len(band_data) == 3:
+            self.freq: np.ndarray
+            self.tran: np.ndarray
+            self.errs: np.ndarray | None
             self.freq, self.tran, self.errs = band_data
         elif len(band_data) == 2:
             self.freq, self.tran = band_data
             self.errs = None
         self.freq *= 1e9
-        self.tran_interp = None
-        self.errs_interp = None
+        self.tran_interp: np.ndarray | None = None
+        self.errs_interp: np.ndarray | None = None
 
-    def mean(self):
+    def mean(self) -> np.floating:
         """Return the weighted mean of the interpolation curve"""
         return np.sum(self.freq * self.tran) / np.sum(self.tran)
 
-    def mean_trans(self):
+    def mean_trans(self) -> np.floating:
         """Return the value at the mean of the interpolation curve"""
         return np.interp(self.mean(), self.freq, self.tran)
 
-    def cache_grid(self, freqs):
+    def cache_grid(self, freqs: np.ndarray | None) -> None:
         """Cache the values and errors from the interpolation grid"""
         if freqs is None:
             self.tran_interp = self.tran
@@ -54,7 +59,7 @@ class FreqInterp:
         ).clip(1e-6, np.inf)
         return
 
-    def rvs(self, freqs, nsample=0):
+    def rvs(self, freqs: np.ndarray | None, nsample: int = 0) -> np.ndarray:
         """Sample values"""
 
         self.cache_grid(freqs)

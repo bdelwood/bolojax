@@ -1,3 +1,4 @@
+# ruff: noqa: ARG002
 """Sky model."""
 
 from __future__ import annotations
@@ -6,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from functools import cached_property
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import am
 import numpy as np
@@ -18,10 +19,15 @@ from bolojax.compute import physics
 from bolojax.models.params import Var
 from bolojax.models.utils import cfg_path, is_not_none
 
+if TYPE_CHECKING:
+    from bolojax.models.instrument import Instrument
+
 GHz_to_Hz = 1.0e09
 
 
-def _interp_to_hz(freqs_hz, freq_ghz, vals):
+def _interp_to_hz(
+    freqs_hz: np.ndarray, freq_ghz: np.ndarray, vals: np.ndarray
+) -> np.ndarray:
     """Interpolate values from a GHz grid onto an Hz grid."""
     return np.interp(freqs_hz, freq_ghz * GHz_to_Hz, vals)
 
@@ -68,16 +74,24 @@ class AtmBackend(ABC):
 class AtmProfile(AtmBackend):
     """Single fixed atmosphere profile from a text file."""
 
-    def __init__(self, path):
+    def __init__(self, path: str | Path) -> None:
         self.freq_ghz, self.temps, self.transmission = np.loadtxt(
             path, unpack=True, usecols=[0, 2, 3], dtype=np.float64
         )
 
-    def raw_spectra(self, freqs, pwv, elevation):  # noqa: ARG002
+    def raw_spectra(
+        self, freqs: np.ndarray, pwv: float, elevation: float
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.freq_ghz, self.temps, self.transmission
 
 
-def _compute_am_grid(path, amc_args, profile_pwv_mm, pwv_mm, elevation):
+def _compute_am_grid(
+    path: str,
+    amc_args: list[str | float],
+    profile_pwv_mm: float,
+    pwv_mm: list[float],
+    elevation: list[float],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute a (PWV, elevation) atmosphere grid via am.ModelGrid.
 
     Module-level function for ``joblib.Memory`` caching.
@@ -90,7 +104,7 @@ def _compute_am_grid(path, amc_args, profile_pwv_mm, pwv_mm, elevation):
         }
     )
 
-    def args_fn(pwv_mm, elevation):
+    def args_fn(pwv_mm: float, elevation: float) -> list[str | float]:
         subs = {
             "zenith": 90.0 - elevation,
             "pwv_scale": max(pwv_mm / profile_pwv_mm, 1e-6) if pwv_mm > 0 else 1e-6,
@@ -103,7 +117,7 @@ def _compute_am_grid(path, amc_args, profile_pwv_mm, pwv_mm, elevation):
     return freq_ghz, tb, result["transmittance"].values
 
 
-def _make_grid(values, step):
+def _make_grid(values: np.ndarray, step: float) -> list[float]:
     """Build a regular grid covering the range of *values* at *step* spacing."""
     lo = step * np.floor(np.min(values) / step)
     hi = step * np.ceil(np.max(values) / step)
@@ -125,13 +139,13 @@ class AmAtm(AtmBackend):
 
     def __init__(
         self,
-        path,
-        amc_args,
-        profile_pwv_mm=0.425,
-        pwv_mm=None,
-        elevation=None,
-        cache_dir=None,
-    ):
+        path: str,
+        amc_args: list[str | float],
+        profile_pwv_mm: float = 0.425,
+        pwv_mm: list[float] | None = None,
+        elevation: list[float] | None = None,
+        cache_dir: str | None = None,
+    ) -> None:
         self.path = path
         self.amc_args = amc_args
         self.profile_pwv_mm = profile_pwv_mm
@@ -140,11 +154,17 @@ class AmAtm(AtmBackend):
 
         cache = Path(cache_dir) if cache_dir else Path(path).parent / ".bolojax_cache"
         self._compute = Memory(cache, verbose=0).cache(_compute_am_grid)
-        self._freq_ghz = None
-        self._tb_grid = None
-        self._tx_grid = None
+        self._freq_ghz: np.ndarray | None = None
+        self._tb_grid: np.ndarray | None = None
+        self._tx_grid: np.ndarray | None = None
 
-    def ensure_grid(self, pwv_m=None, elevation=None, pwv_step_mm=0.1, elev_step=1.0):
+    def ensure_grid(
+        self,
+        pwv_m: np.ndarray | None = None,
+        elevation: np.ndarray | None = None,
+        pwv_step_mm: float = 0.1,
+        elev_step: float = 1.0,
+    ) -> None:
         """Ensure the grid is computed, inferring extent from sampled values if needed."""
         if self._freq_ghz is not None:
             return
@@ -168,7 +188,9 @@ class AmAtm(AtmBackend):
             self.elevation,
         )
 
-    def raw_spectra(self, freqs, pwv, elevation):  # noqa: ARG002
+    def raw_spectra(
+        self, freqs: np.ndarray, pwv: float, elevation: float
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Look up nearest grid point. *pwv* is in meters (SI)."""
         i_pwv = np.argmin(np.abs(np.array(self.pwv_mm) - pwv * 1e3))
         i_elev = np.argmin(np.abs(np.array(self.elevation) - elevation))
@@ -178,7 +200,9 @@ class AmAtm(AtmBackend):
             self._tx_grid[i_pwv, i_elev],
         )
 
-    def batch(self, freqs, pwv, elevation):
+    def batch(
+        self, freqs: np.ndarray, pwv: np.ndarray, elevation: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Ensure grid covers all queried points, then delegate to base."""
         self.ensure_grid(pwv_m=pwv, elevation=elevation)
         return super().batch(freqs, pwv, elevation)
@@ -199,17 +223,17 @@ class Atmosphere(BaseModel):
     amc_args: list | None = None
     profile_pwv_mm: float = 0.425
 
-    _telescope: Any = PrivateAttr(default=None)
-    _sampled_pwv: Any = PrivateAttr(default=None)
-    _sampled_elev: Any = PrivateAttr(default=None)
+    _telescope: Instrument | None = PrivateAttr(default=None)
+    _sampled_pwv: np.ndarray | None = PrivateAttr(default=None)
+    _sampled_elev: np.ndarray | None = PrivateAttr(default=None)
     _nsamples: int = PrivateAttr(default=1)
 
-    def set_telescope(self, value):
+    def set_telescope(self, value: Instrument) -> None:
         """Set the telescope (needed to sample elevation and PWV values)."""
         self._telescope = value
 
     @cached_property
-    def cached_model(self):
+    def cached_model(self) -> AtmBackend | None:
         """Cache the Atmosphere model backend."""
         if is_not_none(self._telescope.custom_atm_file):
             return AtmProfile(cfg_path(self._telescope.custom_atm_file))
@@ -224,7 +248,7 @@ class Atmosphere(BaseModel):
             )
         return None
 
-    def sample(self, nsamples):
+    def sample(self, nsamples: int) -> None:
         """Sample PWV and elevation for atmosphere evaluation."""
         self._telescope.pwv.sample(nsamples)
         self._telescope.elevation.sample(nsamples)
@@ -232,14 +256,18 @@ class Atmosphere(BaseModel):
         self._sampled_elev = np.atleast_1d(self._telescope.elevation())
         self._nsamples = max(nsamples, 1)
 
-    def temp(self, freqs, elevation=None):
+    def temp(
+        self, freqs: np.ndarray, elevation: np.ndarray | None = None
+    ) -> np.ndarray:
         """Brightness temperature [K] for sampled conditions."""
         nsamp = max(self._nsamples, 1)
         elev = elevation if elevation is not None else self._sampled_elev
         temps, _ = self.cached_model.batch(freqs, self._sampled_pwv, elev)
         return temps.reshape((nsamp, 1, len(freqs)))
 
-    def trans(self, freqs, elevation=None):
+    def trans(
+        self, freqs: np.ndarray, elevation: np.ndarray | None = None
+    ) -> np.ndarray:
         """Transmission [0-1] for sampled conditions."""
         nsamp = max(self._nsamples, 1)
         elev = elevation if elevation is not None else self._sampled_elev
@@ -264,10 +292,10 @@ class Dust(Foreground):
     scale_temperature: Var("K") = None
 
     _nsamples: int = PrivateAttr(default=1)
-    _amp: Any = PrivateAttr(default=None)
-    _scale_temp: Any = PrivateAttr(default=None)
+    _amp: np.ndarray | None = PrivateAttr(default=None)
+    _scale_temp: np.ndarray | None = PrivateAttr(default=None)
 
-    def sample(self, nsamples):
+    def sample(self, nsamples: int) -> None:
         """Sample this component."""
         self.amplitude.sample(nsamples)
         self.scale_temperature.sample(nsamples)
@@ -277,7 +305,7 @@ class Dust(Foreground):
         )
         self._nsamples = max(self._amp.size, self._scale_temp.size)
 
-    def temp(self, freqs):
+    def temp(self, freqs: np.ndarray) -> np.ndarray:
         """Get sampled temperatures."""
         out_shape = (self._nsamples, 1, len(freqs))
         return self.__temp(
@@ -290,7 +318,14 @@ class Dust(Foreground):
         ).reshape(out_shape)
 
     @staticmethod
-    def __temp(freqs, emiss, amp, scale_frequency, spectral_index, scale_temp):  # pylint: disable=too-many-arguments
+    def __temp(
+        freqs: np.ndarray,
+        emiss: float | np.ndarray,
+        amp: np.ndarray,
+        scale_frequency: float | np.ndarray,
+        spectral_index: float | np.ndarray,
+        scale_temp: np.ndarray,
+    ) -> np.ndarray:  # pylint: disable=too-many-arguments
         """Return the galactic effective physical temperature."""
         # Passed amplitude [W/(m^2 sr Hz)] converted from [MJy]
         amp = emiss * amp
@@ -317,15 +352,15 @@ class Synchrotron(Foreground):
     amplitude: Var("K_RJ") = None
 
     _nsamples: int = PrivateAttr(default=1)
-    _amp: Any = PrivateAttr(default=None)
+    _amp: np.ndarray | None = PrivateAttr(default=None)
 
-    def sample(self, nsamples):
+    def sample(self, nsamples: int) -> None:
         """Sample this component."""
         self.amplitude.sample(nsamples)
         self._amp = np.expand_dims(np.expand_dims(self.amplitude.SI, -1), -1)
         self._nsamples = self._amp.size
 
-    def temp(self, freqs):
+    def temp(self, freqs: np.ndarray) -> np.ndarray:
         """Get sampled temperatures."""
         out_shape = (self._nsamples, 1, len(freqs))
         return self.__temp(
@@ -337,7 +372,13 @@ class Synchrotron(Foreground):
         ).reshape(out_shape)
 
     @staticmethod
-    def __temp(freqs, emiss, amp, scale_frequency, spectral_index):
+    def __temp(
+        freqs: np.ndarray,
+        emiss: float | np.ndarray,
+        amp: np.ndarray,
+        scale_frequency: float | np.ndarray,
+        spectral_index: float | np.ndarray,
+    ) -> np.ndarray:
         """Return the effective physical temperature."""
         bright_temp = emiss * amp
         # Frequency scaling (freq / sync_freq)**sync_ind
@@ -358,23 +399,27 @@ class Universe(BaseModel):
 
     sources: ClassVar[list[str]] = ["cmb", "dust", "synchrotron", "atmosphere"]
 
-    def sample(self, nsamples):
+    def sample(self, nsamples: int) -> None:
         """Sample the sky component."""
         self.dust.sample(nsamples)
         self.synchrotron.sample(nsamples)
         self.atmosphere.sample(nsamples)
 
-    def temp(self, freqs, elevation=None):
+    def temp(
+        self, freqs: np.ndarray, elevation: np.ndarray | None = None
+    ) -> OrderedDict[str, float | np.ndarray]:
         """Get sampled temperatures."""
-        ret = OrderedDict()
+        ret: OrderedDict[str, float | np.ndarray] = OrderedDict()
         ret["cmb"] = physics.Tcmb
         ret["dust"] = self.dust.temp(freqs)
         ret["synchrotron"] = self.synchrotron.temp(freqs)
         ret["atmosphere"] = self.atmosphere.temp(freqs, elevation=elevation)
         return ret
 
-    def trans(self, freqs, elevation=None):
+    def trans(
+        self, freqs: np.ndarray, elevation: np.ndarray | None = None
+    ) -> OrderedDict[str, np.ndarray]:
         """Get sampled transmission coefs."""
-        ret = OrderedDict()
+        ret: OrderedDict[str, np.ndarray] = OrderedDict()
         ret["atmosphere"] = self.atmosphere.trans(freqs, elevation=elevation)
         return ret

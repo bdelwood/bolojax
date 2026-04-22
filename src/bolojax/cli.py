@@ -1,5 +1,7 @@
 """Command-line interface for bolojax."""
 
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
@@ -8,7 +10,7 @@ import yaml
 from bolojax import Experiment
 
 
-def main():
+def main() -> None:
     """Entry point for the bolojax CLI."""
     parser = argparse.ArgumentParser(description="Bolometric sensitivity calculator")
     parser.add_argument(

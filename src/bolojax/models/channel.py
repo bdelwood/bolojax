@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from collections import OrderedDict
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from bolojax.compute import noise, physics
+from bolojax.compute.noise import Noise
 from bolojax.models.params import Var
 from bolojax.models.sky import Universe
 from bolojax.models.utils import is_not_none
+
+if TYPE_CHECKING:
+    from bolojax.models.camera import Camera
 
 
 class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
@@ -50,65 +55,67 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
     nyquist_inductance: Var() = None
 
     @property
-    def noise_calc(self):
+    def noise_calc(self) -> Noise | None:
         """Return the noise calculator from the parent camera."""
         return self._camera.noise_calc
 
     # Private runtime state
-    _optical_effic: Any = PrivateAttr(default=None)
-    _optical_emiss: Any = PrivateAttr(default=None)
-    _optical_temps: Any = PrivateAttr(default=None)
-    _sky_temp_dict: Any = PrivateAttr(default=None)
-    _sky_tran_dict: Any = PrivateAttr(default=None)
-    _det_effic: Any = PrivateAttr(default=None)
-    _det_emiss: Any = PrivateAttr(default=None)
-    _det_temp: Any = PrivateAttr(default=None)
-    _camera: Any = PrivateAttr(default=None)
-    _idx: Any = PrivateAttr(default=None)
-    _freqs: Any = PrivateAttr(default=None)
-    _flo: Any = PrivateAttr(default=None)
-    _fhi: Any = PrivateAttr(default=None)
-    _freq_mask: Any = PrivateAttr(default=None)
-    _bandwidth: Any = PrivateAttr(default=None)
+    _optical_effic: list[np.ndarray] | None = PrivateAttr(default=None)
+    _optical_emiss: list[np.ndarray] | None = PrivateAttr(default=None)
+    _optical_temps: list[np.ndarray] | None = PrivateAttr(default=None)
+    _sky_temp_dict: OrderedDict[str, np.ndarray | float] | None = PrivateAttr(
+        default=None
+    )
+    _sky_tran_dict: OrderedDict[str, np.ndarray] | None = PrivateAttr(default=None)
+    _det_effic: np.ndarray | float | None = PrivateAttr(default=None)
+    _det_emiss: np.ndarray | float | None = PrivateAttr(default=None)
+    _det_temp: np.ndarray | float | None = PrivateAttr(default=None)
+    _camera: Camera | None = PrivateAttr(default=None)
+    _idx: int | None = PrivateAttr(default=None)
+    _freqs: np.ndarray | None = PrivateAttr(default=None)
+    _flo: np.ndarray | float | None = PrivateAttr(default=None)
+    _fhi: np.ndarray | float | None = PrivateAttr(default=None)
+    _freq_mask: np.ndarray | None = PrivateAttr(default=None)
+    _bandwidth: np.ndarray | float | None = PrivateAttr(default=None)
     _band_width_factor: float = PrivateAttr(default=1.0)
 
     @property
-    def bandwidth(self):
+    def bandwidth(self) -> np.ndarray | float | None:
         return self._bandwidth
 
     @bandwidth.setter
-    def bandwidth(self, value):
+    def bandwidth(self, value: np.ndarray | float | None) -> None:
         self._bandwidth = value
 
-    def set_camera(self, camera, idx):
+    def set_camera(self, camera: Camera, idx: int) -> None:
         """Set the parent camera and the channel index."""
         self._camera = camera
         self._idx = idx
 
-    def sample(self, nsamples):
+    def sample(self, nsamples: int) -> None:
         """Sample PDF parameters."""
         self.det_eff.sample(nsamples)
         self.squid_nei.sample(nsamples)
         self.bolo_resistance.sample(nsamples)
 
     @property
-    def camera(self):
+    def camera(self) -> Camera | None:
         return self._camera
 
     @property
-    def freqs(self):
+    def freqs(self) -> np.ndarray | None:
         return self._freqs
 
     @property
-    def flo(self):
+    def flo(self) -> np.ndarray | float | None:
         return self._flo
 
     @property
-    def fhi(self):
+    def fhi(self) -> np.ndarray | float | None:
         return self._fhi
 
     @property
-    def ndet(self):
+    def ndet(self) -> int:
         return (
             self.num_det_per_water
             * self.num_wafer_per_optics_tube
@@ -116,10 +123,15 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         )
 
     @property
-    def idx(self):
+    def idx(self) -> int | None:
         return self._idx
 
-    def photon_NEP(self, elem_power, elems=None, ap_names=None):
+    def photon_NEP(
+        self,
+        elem_power: np.ndarray,
+        elems: list[str] | None = None,
+        ap_names: list[str] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Return the photon NEP given the power in the element in the optical chain."""
         if elems is None:
             return self.noise_calc.photon_NEP(elem_power, self._freqs)
@@ -130,7 +142,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             elem_power, self._freqs, elems=elems, det_pitch=det_pitch, ap_names=ap_names
         )
 
-    def _resolve_psat(self, opt_pow):
+    def _resolve_psat(self, opt_pow: np.ndarray) -> np.ndarray:
         """Resolve Psat from explicit value or psat_factor.
 
         Explicit psat takes priority over psat_factor (matching BoloCalc's
@@ -142,11 +154,11 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             return opt_pow * self.psat_factor.SI
         return opt_pow * 3.0
 
-    def bolo_Psat(self, opt_pow):
+    def bolo_Psat(self, opt_pow: np.ndarray) -> np.ndarray:
         """Return the PSAT used in the computation."""
         return self._resolve_psat(opt_pow)
 
-    def bolo_G(self, opt_pow):
+    def bolo_G(self, opt_pow: np.ndarray) -> np.ndarray:
         """Return the Bolometric G factor used in the computation."""
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
@@ -157,7 +169,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             g = noise.G(self._resolve_psat(opt_pow), n, tb, tc)
         return g
 
-    def bolo_Flink(self):
+    def bolo_Flink(self) -> np.ndarray:
         """Return the Bolometric f-link used in the computation."""
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
@@ -168,7 +180,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             flink = noise.Flink(n, tb, tc)
         return flink
 
-    def bolo_NEP(self, opt_pow):
+    def bolo_NEP(self, opt_pow: np.ndarray) -> np.ndarray:
         """Return the bolometric NEP given the detector details."""
         tb = self._camera.bath_temperature()
         tc = self.Tc.SI
@@ -183,7 +195,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             flink = noise.Flink(n, tb, tc)
         return noise.bolo_NEP(flink, g, tc)
 
-    def read_NEP(self, opt_pow):
+    def read_NEP(self, opt_pow: np.ndarray) -> np.ndarray | None:
         """Return the readout NEP given the detector details."""
         if np.isnan(self.squid_nei.SI).any():
             return None
@@ -202,7 +214,7 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             p_bias, self.bolo_resistance.SI.T, self.squid_nei.SI.T, s_fact
         )
 
-    def compute_evaluation_freqs(self, freq_resol=None):
+    def compute_evaluation_freqs(self, freq_resol: float | None = None) -> np.ndarray:
         """Compute and return the evaluation frequencies."""
         self.bandwidth = self.band_center.SI * self.fractional_bandwidth.SI
         if freq_resol is None:
@@ -232,7 +244,9 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         self._freqs = self._freqs[self._freq_mask]
         return self._freqs
 
-    def eval_optical_chain(self, nsample=0, freq_resol=None):
+    def eval_optical_chain(
+        self, nsample: int = 0, freq_resol: float | None = None
+    ) -> None:
         """Evaluate the performance of the optical chain for this channel."""
         self.compute_evaluation_freqs(freq_resol)
         self._optical_effic = []
@@ -244,7 +258,9 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
             self._optical_emiss.append(emiss)
             self._optical_temps.append(temps)
 
-    def eval_det_response(self, nsample=0, freq_resol=None):
+    def eval_det_response(
+        self, nsample: int = 0, freq_resol: float | None = None
+    ) -> None:
         """Evaluate the detector response for this channel."""
         self._freqs = self.compute_evaluation_freqs(freq_resol)
         self.band_response.sample(nsample, self._freqs)
@@ -256,7 +272,12 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         self._det_emiss = 0.0
         self._det_temp = self._camera.bath_temperature()
 
-    def eval_sky(self, universe, freq_resol=None, elevation=None):
+    def eval_sky(
+        self,
+        universe: Universe,
+        freq_resol: float | None = None,
+        elevation: np.ndarray | None = None,
+    ) -> None:
         """Evaluate the sky parameters for this channel.
 
         If *elevation* is provided (from per-pixel sampling), the
@@ -268,29 +289,29 @@ class Channel(BaseModel):  # pylint: disable=too-many-instance-attributes
         self._sky_tran_dict = universe.trans(self._freqs, elevation=elevation)
 
     @property
-    def optical_effic(self):
+    def optical_effic(self) -> list[np.ndarray] | None:
         return self._optical_effic
 
     @property
-    def optical_emiss(self):
+    def optical_emiss(self) -> list[np.ndarray] | None:
         return self._optical_emiss
 
     @property
-    def optical_temps(self):
+    def optical_temps(self) -> list[np.ndarray] | None:
         return self._optical_temps
 
     @property
-    def sky_names(self):
+    def sky_names(self) -> list[str]:
         return list(self._sky_temp_dict.keys())
 
     @property
-    def sky_temps(self):
+    def sky_temps(self) -> list[np.ndarray | float | None]:
         return [self._sky_temp_dict.get(k) for k in Universe.sources]
 
     @property
-    def sky_effic(self):
+    def sky_effic(self) -> list[np.ndarray | float]:
         return [self._sky_tran_dict.get(k, 1.0) for k in Universe.sources]
 
     @property
-    def sky_emiss(self):
+    def sky_emiss(self) -> list[int]:
         return [1] * len(Universe.sources)

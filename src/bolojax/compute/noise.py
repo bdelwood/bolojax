@@ -1,20 +1,26 @@
 """Computations for noise estimation."""
 
+from __future__ import annotations
+
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
+from jax.typing import ArrayLike
 
 from bolojax.compute import physics
 from bolojax.compute.beam_correlation import compute_corr_curves
 
 
-def Flink(n, Tb, Tc):
-    """
-    Link factor for the bolo to the bath.
+def Flink(n: ArrayLike, Tb: ArrayLike, Tc: ArrayLike) -> Array:
+    """Link factor for the bolo to the bath.
 
     Args:
-    n (float): thermal carrier index
-    Tb (float): bath temperature [K]
-    Tc (float): transition temperature [K]
+        n: thermal carrier index.
+        Tb: bath temperature [K].
+        Tc: transition temperature [K].
+
+    Returns:
+        Dimensionless link factor.
     """
     return (
         ((n + 1) / (2 * n + 3))
@@ -23,26 +29,34 @@ def Flink(n, Tb, Tc):
     )
 
 
-def G(psat, n, Tb, Tc):
-    """
-    Thermal conduction between the bolo and the bath.
+def G(psat: ArrayLike, n: ArrayLike, Tb: ArrayLike, Tc: ArrayLike) -> Array:
+    """Thermal conduction between the bolo and the bath.
 
     Args:
-    psat (float): saturation power [W]
-    n (float): thermal carrier index
-    Tb (float): bath temperature [K]
-    Tc (float): bolo transition temperature [K]
+        psat: saturation power [W].
+        n: thermal carrier index.
+        Tb: bath temperature [K].
+        Tc: bolo transition temperature [K].
+
+    Returns:
+        Thermal conductance [W/K].
     """
     return psat * (n + 1) * (Tc**n) / ((Tc ** (n + 1)) - (Tb ** (n + 1)))
 
 
-def calc_photon_NEP(popts, freqs, factors=None):
-    r"""
-    Calculate photon NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a detector.
+def calc_photon_NEP(
+    popts: Array, freqs: Array, factors: np.ndarray | None = None
+) -> tuple[Array, Array]:
+    r"""Calculate photon NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a detector.
 
     Args:
-    popts (list): power from elements in the optical elements [W]
-    freqs (list): frequencies of observation [Hz]
+        popts: power from each optical element, shape ``(n_elem, n_freq)`` [W].
+        freqs: frequencies of observation [Hz].
+        factors: per-element correlation factors from ``corr_facts``.
+            If ``None``, correlations are ignored.
+
+    Returns:
+        Tuple of (NEP, NEP_corr).  Without correlations both are identical.
     """
     popt = jnp.sum(popts, axis=0)
     # No correlations
@@ -71,38 +85,47 @@ def calc_photon_NEP(popts, freqs, factors=None):
     return nep, neparr
 
 
-def bolo_NEP(flink, G_val, Tc):
-    r"""
-    Thermal carrier NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$.
+def bolo_NEP(flink: ArrayLike, G_val: ArrayLike, Tc: ArrayLike) -> Array:
+    r"""Thermal carrier NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$.
 
     Args:
-    flink (float): link factor to the bolo bath
-    G (float): thermal conduction between the bolo and the bath [W/K]
-    Tc (float): bolo transition temperature [K]
+        flink: link factor to the bolo bath.
+        G_val: thermal conduction between the bolo and the bath [W/K].
+        Tc: bolo transition temperature [K].
+
+    Returns:
+        Bolometer phonon NEP.
     """
     return jnp.sqrt(4 * physics.kB * flink * (Tc**2) * G_val)
 
 
-def read_NEP(pelec, boloR, nei, sfact=1.0):
-    r"""
-    Readout NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a voltage-biased bolo.
+def read_NEP(
+    pelec: ArrayLike, boloR: ArrayLike, nei: ArrayLike, sfact: ArrayLike = 1.0
+) -> Array:
+    r"""Readout NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a voltage-biased bolo.
 
     Args:
-    pelec (float): bias power [W]
-    boloR (float): bolometer resistance [Ohms]
-    nei (float): noise equivalent current $[\mathrm{A}/\sqrt{\mathrm{Hz}}]$
+        pelec: bias power [W].
+        boloR: bolometer resistance [Ohms].
+        nei: noise equivalent current $[\mathrm{A}/\sqrt{\mathrm{Hz}}]$.
+        sfact: responsivity scale factor. Defaults to 1.
+
+    Returns:
+        Readout NEP.
     """
     responsivity = sfact / jnp.sqrt(boloR * pelec)
     return nei / responsivity
 
 
-def dPdT(eff, freqs):
-    """
-    Change in power on the detector with change in CMB temperature [W/K].
+def dPdT(eff: ArrayLike, freqs: Array) -> Array:
+    """Change in power on the detector with change in CMB temperature [W/K].
 
     Args:
-    eff (float): detector efficiency
-    freqs (float): observation frequencies [Hz]
+        eff: detector efficiency (scalar or frequency-dependent).
+        freqs: observation frequencies [Hz].
+
+    Returns:
+        Integrated dP/dT [W/K].
     """
     temp = jnp.full_like(freqs, physics.Tcmb)
     return jnp.trapezoid(
@@ -110,40 +133,53 @@ def dPdT(eff, freqs):
     )
 
 
-def NET_from_NEP(nep, freqs, sky_eff, opt_coup=1.0):
-    r"""
-    NET $[\mathrm{K}\sqrt{\mathrm{s}}]$ from NEP.
+def NET_from_NEP(
+    nep: ArrayLike, freqs: Array, sky_eff: ArrayLike, opt_coup: ArrayLike = 1.0
+) -> Array:
+    r"""NET $[\mathrm{K}\sqrt{\mathrm{s}}]$ from NEP.
 
     Args:
-    nep (float): NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$
-    freqs (list): observation frequencies [Hz]
-    sky_eff (float): efficiency between the detector and the sky
-    opt_coup (float): optical coupling to the detector. Default to 1.
+        nep: NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$.
+        freqs: observation frequencies [Hz].
+        sky_eff: efficiency between the detector and the sky.
+        opt_coup: optical coupling to the detector. Defaults to 1.
+
+    Returns:
+        Noise-equivalent temperature per detector.
     """
     dpdt = opt_coup * dPdT(sky_eff, freqs)
     return nep / (jnp.sqrt(2.0) * dpdt)
 
 
-def NET_arr(net, n_det, det_yield=1.0):
-    r"""
-    Array NET $[\mathrm{K}\sqrt{\mathrm{s}}]$ from NET per detector and num of detectors.
+def NET_arr(
+    net: ArrayLike, n_det: int | ArrayLike, det_yield: ArrayLike = 1.0
+) -> Array:
+    r"""Array NET $[\mathrm{K}\sqrt{\mathrm{s}}]$ from NET per detector and number of detectors.
 
     Args:
-    net (float): NET per detector
-    n_det (int): number of detectors
-    det_yield (float): detector yield. Defaults to 1.
+        net: NET per detector.
+        n_det: number of detectors.
+        det_yield: detector yield. Defaults to 1.
+
+    Returns:
+        Array-level noise-equivalent temperature.
     """
     return net / (jnp.sqrt(n_det * det_yield))
 
 
-def map_depth(net_arr, fsky, tobs, obs_eff):
-    r"""
-    Sensitivity [K-arcmin] given array NET.
+def map_depth(
+    net_arr: ArrayLike, fsky: ArrayLike, tobs: ArrayLike, obs_eff: ArrayLike
+) -> Array:
+    r"""Sensitivity [K-arcmin] given array NET.
 
     Args:
-    net_arr (float): array NET $[\mathrm{K}\sqrt{\mathrm{s}}]$
-    fsky (float): sky fraction
-    tobs (float): observation time [s]
+        net_arr: array NET $[\mathrm{K}\sqrt{\mathrm{s}}]$.
+        fsky: sky fraction.
+        tobs: observation time [s].
+        obs_eff: observing efficiency.
+
+    Returns:
+        Map depth [K-arcmin].
     """
     return jnp.sqrt(
         (4.0 * physics.PI * fsky * 2.0 * jnp.power(net_arr, 2.0)) / (tobs * obs_eff)
@@ -165,13 +201,13 @@ class Noise:  # pylint: disable=too-many-instance-attributes
             Defaults to "bolocalc".
     """
 
-    _det_p: np.ndarray
-    _c_apert: np.ndarray
-    _c_stop: np.ndarray
+    _det_p: Array
+    _c_apert: Array
+    _c_stop: Array
 
-    def __init__(self, beam_preset="bolocalc"):
+    def __init__(self, beam_preset: str | dict = "bolocalc") -> None:
         # Aperture stop names
-        self._ap_names = ["APERT", "STOP", "LYOT"]
+        self._ap_names: list[str] = ["APERT", "STOP", "LYOT"]
 
         # Compute correlation curves from beam model
         p_grid, gamma_apert, gamma_stop = compute_corr_curves(beam_preset)
@@ -180,18 +216,26 @@ class Noise:  # pylint: disable=too-many-instance-attributes
         self._c_stop = gamma_stop
 
         # Geometric pitch factor
-        self._geo_fact = 6  # Hex packing; 6 for temperature. More complicated for polarization, not a simple factor.
+        self._geo_fact: int = 6  # Hex packing; 6 for temperature. More complicated for polarization, not a simple factor.
 
-    def corr_facts(self, elems, det_pitch, ap_names, flamb_max=3.0):
-        r"""
-        Calculate the Bose white-noise correlation factor.
+    def corr_facts(
+        self,
+        elems: list[str],
+        det_pitch: float,
+        ap_names: list[str],
+        flamb_max: float = 3.0,
+    ) -> np.ndarray:
+        r"""Calculate the Bose white-noise correlation factor.
 
         Args:
-        elems (list): optical elements in the camera
-        det_pitch (float): detector pitch in $F\lambda$ units
-        flamb_max (float): the maximum detector pitch distance
-        for which to calculate the correlation factor.
-        Default is 3.
+            elems: optical element names in the camera.
+            det_pitch: detector pitch in $F\lambda$ units.
+            ap_names: names identifying aperture stop elements.
+            flamb_max: maximum detector pitch distance for which to
+                calculate the correlation factor. Defaults to 3.
+
+        Returns:
+            Per-element correlation factors.
         """
         ndets = int(round(flamb_max / (det_pitch), 0))
         inds1 = [
@@ -223,20 +267,28 @@ class Noise:  # pylint: disable=too-many-instance-attributes
 
         return np.array(factors)
 
-    def photon_NEP(self, popts, freqs, **kwargs):
-        r"""
-        Calculate photon NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a detector.
+    def photon_NEP(
+        self,
+        popts: Array,
+        freqs: Array,
+        *,
+        elems: list[str] | None = None,
+        det_pitch: float | None = None,
+        ap_names: list[str] | None = None,
+    ) -> tuple[Array, Array]:
+        r"""Calculate photon NEP $[\mathrm{W}/\sqrt{\mathrm{Hz}}]$ for a detector.
 
         Args:
-        popts (list): power from elements in the optical elements [W]
-        freqs (list): frequencies of observation [Hz]
-        elems (list): optical elements
-        det_pitch (float): detector pitch in $F\lambda$ units. Default is None.
+            popts: power from each optical element [W].
+            freqs: frequencies of observation [Hz].
+            elems: optical element names.
+            det_pitch: detector pitch in $F\lambda$ units.
+            ap_names: names identifying aperture stop elements.
+
+        Returns:
+            Tuple of (NEP, NEP_corr).
         """
-        elems = kwargs.get("elems")
-        det_pitch = kwargs.get("det_pitch")
-        ap_names = kwargs.get("ap_names")
-        if elems is None or det_pitch is None:
+        if elems is None or det_pitch is None or ap_names is None:
             factors = None
         else:
             factors = self.corr_facts(elems, det_pitch, ap_names)

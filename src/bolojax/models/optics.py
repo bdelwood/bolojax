@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,23 +12,34 @@ from bolojax.compute import physics
 from bolojax.models.params import Var
 from bolojax.models.utils import is_not_none
 
+if TYPE_CHECKING:
+    from bolojax.models.channel import Channel
+
 
 class ChannelResults:
     """Performance parameters for one optical element for one channel."""
 
-    def __init__(self):
-        self.temp = None
-        self.refl = None
-        self.spil = None
-        self.scat = None
-        self.spil_temp = None
-        self.scat_temp = None
-        self.abso = None
-        self.emiss = None
-        self.effic = None
+    def __init__(self) -> None:
+        self.temp: float | np.ndarray | None = None
+        self.refl: float | np.ndarray | None = None
+        self.spil: float | np.ndarray | None = None
+        self.scat: float | np.ndarray | None = None
+        self.spil_temp: float | np.ndarray | None = None
+        self.scat_temp: float | np.ndarray | None = None
+        self.abso: float | np.ndarray | None = None
+        self.emiss: float | np.ndarray | None = None
+        self.effic: float | np.ndarray | None = None
 
     @staticmethod
-    def emission(freqs, abso, spil, spil_temp, scat, scat_temp, temp):  # pylint: disable=too-many-arguments
+    def emission(
+        freqs: np.ndarray,
+        abso: float | np.ndarray,
+        spil: float | np.ndarray,
+        spil_temp: float | np.ndarray,
+        scat: float | np.ndarray,
+        scat_temp: float | np.ndarray,
+        temp: float | np.ndarray,
+    ) -> np.ndarray:  # pylint: disable=too-many-arguments
         """Compute the emission for this element."""
         return (
             abso
@@ -37,11 +48,16 @@ class ChannelResults:
         )
 
     @staticmethod
-    def efficiency(refl, abso, spil, scat):
+    def efficiency(
+        refl: float | np.ndarray,
+        abso: float | np.ndarray,
+        spil: float | np.ndarray,
+        scat: float | np.ndarray,
+    ) -> float | np.ndarray:
         """Compute the transmission for this element."""
         return (1 - refl) * (1 - abso) * (1 - spil) * (1 - scat)
 
-    def calculate(self, freqs):
+    def calculate(self, freqs: np.ndarray) -> None:
         """Compute the results for the frequencies of interest for a given channel."""
         emiss_shape = np.broadcast(
             freqs,
@@ -66,7 +82,11 @@ class ChannelResults:
             self.refl, self.abso, self.spil, self.scat
         ).reshape(effic_shape)
 
-    def __call__(self):
+    def __call__(
+        self,
+    ) -> tuple[
+        float | np.ndarray | None, float | np.ndarray | None, float | np.ndarray | None
+    ]:
         """Return key parameters."""
         return (self.effic, self.emiss, self.temp)
 
@@ -89,14 +109,14 @@ class OpticalElement(BaseModel):
     elem_name: str | None = None
     results: dict = Field(default_factory=dict)
 
-    def unsample(self):
+    def unsample(self) -> None:
         """Clear out the sampled parameters."""
         self.temperature.unsample()
         self.reflection.unsample()
         self.spillover.unsample()
         self.scatter_frac.unsample()
 
-    def sample(self, freqs, nsample, chan_idx):
+    def sample(self, freqs: np.ndarray, nsample: int, chan_idx: int) -> ChannelResults:
         """Sample input parameters for a given channel."""
         self.temperature.sample(nsample)
         results_ = ChannelResults()
@@ -121,7 +141,11 @@ class OpticalElement(BaseModel):
         self.results[chan_idx] = results_
         return results_
 
-    def compute_channel(self, channel, freqs, nsample):
+    def compute_channel(
+        self, channel: Channel, freqs: np.ndarray, nsample: int
+    ) -> tuple[
+        float | np.ndarray | None, float | np.ndarray | None, float | np.ndarray | None
+    ]:
         """Compute the results for the frequencies of interest for a given channel."""
         self.unsample()
         results_ = self.sample(freqs, nsample, channel.idx)
@@ -129,7 +153,9 @@ class OpticalElement(BaseModel):
         results_.calculate(freqs)
         return results_()
 
-    def calc_abso(self, channel, freqs, nsample):
+    def calc_abso(
+        self, channel: Channel, freqs: np.ndarray, nsample: int
+    ) -> float | np.ndarray:
         """Compute the absorption for a given channel."""
         return self.absorption.sample(nsample, freqs, channel.idx)
 
@@ -139,7 +165,9 @@ class Mirror(OpticalElement):
 
     conductivity: Var() = None
 
-    def calc_abso(self, channel, freqs, nsample):
+    def calc_abso(
+        self, channel: Channel, freqs: np.ndarray, nsample: int
+    ) -> float | np.ndarray:
         if is_not_none(self.conductivity) and np.isfinite(self.conductivity.SI).all():
             return 1.0 - physics.ohmic_eff(freqs, self.conductivity.SI)
         return super().calc_abso(channel, freqs, nsample)
@@ -152,7 +180,9 @@ class Dielectric(OpticalElement):
     index: Var() = None
     loss_tangent: Var() = None
 
-    def calc_abso(self, channel, freqs, nsample):
+    def calc_abso(
+        self, channel: Channel, freqs: np.ndarray, nsample: int
+    ) -> float | np.ndarray:
         if (
             is_not_none(self.thickness)
             and is_not_none(self.index)
@@ -167,7 +197,9 @@ class Dielectric(OpticalElement):
 class ApertureStop(OpticalElement):
     """OpticalElement sub-class for apertures."""
 
-    def calc_abso(self, channel, freqs, nsample):
+    def calc_abso(
+        self, channel: Channel, freqs: np.ndarray, nsample: int
+    ) -> float | np.ndarray:
         pixel_size = channel.pixel_size()
         f_number = channel.camera.f_number()
         waist_factor = channel.waist_factor()

@@ -1,17 +1,21 @@
 """Functions to store analysis results as astropy data tables"""
 
+from __future__ import annotations
+
+from collections.abc import ItemsView, KeysView, ValuesView
 from pathlib import Path
+from typing import Any
 
 import h5py
 from astropy.io import fits
 from astropy.table import Table
 
 # Make sure we can recognize usual suffixes
-HDF5_SUFFIXS = [".hdf", ".h5", ".hd5", ".hdf5"]
-FITS_SUFFIXS = [".fit", ".fits"]
+HDF5_SUFFIXS: list[str] = [".hdf", ".h5", ".hd5", ".hdf5"]
+FITS_SUFFIXS: list[str] = [".fit", ".fits"]
 
 
-def create_dict_from_guard_rows(col_dict):
+def create_dict_from_guard_rows(col_dict: dict[str, Any]) -> dict[str, list]:
     """Create a dictionary of lists from a dictionary of guard values
 
     Parameters
@@ -24,13 +28,13 @@ def create_dict_from_guard_rows(col_dict):
     ret_dict : `dict`
         The dictionary we created
     """
-    ret_dict = {}
+    ret_dict: dict[str, list] = {}
     for key in col_dict:
         ret_dict[key] = []
     return ret_dict
 
 
-def append_guard_row(data_dict, col_dict):
+def append_guard_row(data_dict: dict[str, list], col_dict: dict[str, Any]) -> None:
     """Append a row with guard values to a data dictionary
 
     Parameters
@@ -52,7 +56,12 @@ class TableDict:
     and to read and write files, either as FITS or HDF5 files.
     """
 
-    def __init__(self, filepath=None, tablelist=None, primary=None):
+    def __init__(
+        self,
+        filepath: str | Path | None = None,
+        tablelist: list[str] | None = None,
+        primary: fits.PrimaryHDU | None = None,
+    ) -> None:
         """C'tor
 
         if filepath is not set, an empty `TableDict` will be constructed.
@@ -68,27 +77,27 @@ class TableDict:
             Optional primary HDU to store if the tables are stored as FITS objects
         """
         self._primary = primary
-        self._table_dict = {}
+        self._table_dict: dict[str, Table] = {}
         if filepath is not None:
             self.load_datatables(filepath, tablelist=tablelist)
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         """Return the names of the tables"""
         return self._table_dict.keys()
 
-    def values(self):
+    def values(self) -> ValuesView[Table]:
         """Return the tables"""
         return self._table_dict.values()
 
-    def items(self):
+    def items(self) -> ItemsView[str, Table]:
         """Return the name : `Table` pairs"""
         return self._table_dict.items()
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Table:
         """Return a `Table` by name"""
         return self._table_dict[key]
 
-    def get_table(self, key):
+    def get_table(self, key: str) -> Table | None:
         """Return a `Table` by name
 
         This version will return None and not raise an exception if the
@@ -96,7 +105,7 @@ class TableDict:
         """
         return self._table_dict.get(key, None)
 
-    def pop_table(self, key):
+    def pop_table(self, key: str) -> Table | None:
         """Return a `Table` by name and remove it from the set
 
         This version will return None and not raise an exception if the
@@ -104,7 +113,7 @@ class TableDict:
         """
         return self._table_dict.pop(key, None)
 
-    def make_datatable(self, key, data):
+    def make_datatable(self, key: str, data: dict[str, Any]) -> Table:
         """Make a `Table` and add it to this objedts
 
         Parameters
@@ -120,7 +129,7 @@ class TableDict:
         self._table_dict[key] = tab
         return tab
 
-    def add_datatable(self, key, tab):
+    def add_datatable(self, key: str, tab: Table) -> None:
         """Add a `Table` to this object
 
         Parameters
@@ -132,7 +141,7 @@ class TableDict:
         """
         self._table_dict[key] = tab
 
-    def make_datatables(self, data):
+    def make_datatables(self, data: dict[str, dict[str, Any]]) -> set[Table]:
         """Make a set of `Table` objects
 
         The input data should be a dictionary of dictionaries:
@@ -151,7 +160,7 @@ class TableDict:
         """
         return {self.make_datatable(key, val) for key, val in data.items()}
 
-    def save_datatables(self, filepath, **kwargs):
+    def save_datatables(self, filepath: str | Path, **kwargs: Any) -> None:
         """Save all of the `Table` objects in this object to a file
 
         Parameters
@@ -181,7 +190,7 @@ class TableDict:
             msg = f"Can only write pickle and hdf5 files for now, not {extype}"
             raise ValueError(msg)
 
-    def load_datatables(self, filepath, **kwargs):
+    def load_datatables(self, filepath: str | Path, **kwargs: Any) -> None:
         """Read a set of `Table` objects from a file into this object
 
         Parameters

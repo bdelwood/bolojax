@@ -1,6 +1,9 @@
 """Experiment-level configuration."""
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -23,7 +26,7 @@ class SimConfig(BaseModel):
     freq_resol: float | None = None
     config_dir: str = str(Path("..") / "config")
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context: Any) -> None:
         set_config_dir(self.config_dir)
 
 
@@ -36,17 +39,17 @@ class Experiment(BaseModel):
     universe: Universe
     instrument: Instrument
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context: Any) -> None:
         self.universe.atmosphere.set_telescope(self.instrument)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "Experiment":
+    def from_yaml(cls, path: str | Path) -> Experiment:
         """Load an experiment from a YAML config file."""
         path = Path(path)
         with path.open() as f:
             config = yaml.safe_load(f)
         return cls.model_validate(config)
 
-    def run(self):
+    def run(self) -> None:
         """Run the entire analysis."""
         self.instrument.run(self.universe, self.sim_config)

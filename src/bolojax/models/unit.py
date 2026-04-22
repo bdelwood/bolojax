@@ -1,5 +1,7 @@
 """Unit conversion system for bolojax."""
 
+from __future__ import annotations
+
 from typing import ClassVar
 
 import numpy as np
@@ -15,7 +17,7 @@ class Unit:
 
     to_SI_dict: ClassVar[dict[str, float]] = {}
 
-    def __init__(self, unit=None):
+    def __init__(self, unit: str | float | None = None) -> None:
         if unit is None:
             self._SI = 1.0
             self._name = ""
@@ -31,23 +33,23 @@ class Unit:
         self._name = "a.u."
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
-    def __call__(self, val):
+    def __call__(self, val: float | np.ndarray | None) -> np.ndarray | None:
         """Convert *val* from native units to SI."""
         if val is None:
             return None
         return np.array(val) * self._SI
 
-    def inverse(self, val):
+    def inverse(self, val: float | np.ndarray | None) -> np.ndarray | None:
         """Convert *val* from SI to native units."""
         if val is None:
             return None
         return np.array(val) / self._SI
 
     @classmethod
-    def update(cls, a_dict):
+    def update(cls, a_dict: dict[str, float]) -> None:
         """Register additional unit conversions."""
         cls.to_SI_dict.update(a_dict)
 

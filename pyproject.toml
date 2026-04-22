@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml",
     "pydantic>=2.7",
     "jax[cpu]",
+    "jaxtyping",
     "equinox",
     "am-python",
     "joblib",

@@ -24,16 +24,28 @@ stop: R_ap outward), following the decomposition in Eq. 51.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 from jax.scipy.special import bessel_jn
+from jax.typing import ArrayLike
+
+BeamParams = dict[str, str | float]
 
 
-def j0(x):
-    """Zeroth-order Bessel function J_0(x)."""
+def j0(x: ArrayLike) -> Array:
+    """Zeroth-order Bessel function J_0(x).
+
+    Args:
+        x: argument (scalar or array).
+
+    Returns:
+        J_0(x), with the z=0 singularity handled.
+    """
     x = jnp.asarray(x, dtype=jnp.float64)
     # bessel_jn returns nan at z=0; handle with jnp.where
     safe_x = jnp.where(jnp.abs(x) < 1e-30, 1.0, x)
@@ -41,27 +53,42 @@ def j0(x):
     return jnp.where(jnp.abs(x) < 1e-30, 1.0, result)
 
 
-def soft_edge(r, R, softening=0.01):
-    """Smooth sigmoid edge: 1 inside R, tapering to 0 outside.
+def soft_edge(r: ArrayLike, R: float, softening: float = 0.01) -> Array:
+    r"""Smooth sigmoid edge: 1 inside R, tapering to 0 outside.
 
-    Uses tanh profile:
-        0.5 * (1 - tanh((r - R) / softening))
+    Uses tanh profile: $0.5\,(1 - \tanh((r - R) / \sigma))$ where
+    $\sigma$ is the softening width.
 
     Args:
-        r: radial coordinate
-        R: edge radius
-        softening: transition width (smaller = sharper edge)
+        r: radial coordinate.
+        R: edge radius.
+        softening: transition width (smaller = sharper edge).
+
+    Returns:
+        Smooth step from 1 to 0 around R.
     """
     return 0.5 * (1 - jnp.tanh((r - R) / softening))
 
 
-def poly_taper(r, a1, a2, n, softening=0.01):
-    """Polynomial taper beam: (1 - a1*r - a2*r^2)^n with soft edge.
+def poly_taper(
+    r: ArrayLike, a1: float, a2: float, n: float, softening: float = 0.01
+) -> Array:
+    r"""Polynomial taper beam: $(1 - a_1 r - a_2 r^2)^n$ with soft edge.
 
     The "bolocalc" preset parameters (a1=1.0825, a2=-0.0413, n=1.300) were
     obtained by least-squares fitting the Hankel transform of this beam model
     against the 100-point coherentApertCorr.pkl curve distributed with the
     original BoloCalc. The fit reproduces the pickle to 0.02% RMS.
+
+    Args:
+        r: radial coordinate (in units of aperture radius).
+        a1: linear coefficient.
+        a2: quadratic coefficient.
+        n: taper exponent.
+        softening: edge transition width.
+
+    Returns:
+        Beam illumination intensity.
     """
     inner = 1 - a1 * r - a2 * r**2
     # Find root for the soft cutoff location
@@ -69,25 +96,50 @@ def poly_taper(r, a1, a2, n, softening=0.01):
     return jnp.abs(inner) ** n * soft_edge(inner, 0.0, softening)
 
 
-def trunc_gauss(r, sigma, R, softening=0.01):
+def trunc_gauss(r: ArrayLike, sigma: float, R: float, softening: float = 0.01) -> Array:
     """Truncated Gaussian beam with soft edge at R.
 
     Generalization of the Gaussian illumination in Hill Eq. 54.
+
+    Args:
+        r: radial coordinate.
+        sigma: Gaussian width parameter.
+        R: truncation radius.
+        softening: edge transition width.
+
+    Returns:
+        Beam illumination intensity.
     """
     return jnp.exp(-2 * sigma**2 * r**2) * soft_edge(r, R, softening)
 
 
-def he11(r, R, R_taper, softening=0.01):
-    """Corrugated horn HE11 mode with soft edge at R_taper.
+def he11(r: ArrayLike, R: float, R_taper: float, softening: float = 0.01) -> Array:
+    r"""Corrugated horn HE11 mode with soft edge at $R_{\mathrm{taper}}$.
 
-    J0(2.405 * r/R)^2 with smooth cutoff at R_taper.  Alternative to the
-    Gaussian illumination of Hill Eq. 54 for corrugated feedhorn optics.
+    $J_0(2.405 \cdot r/R)^2$ with smooth cutoff at $R_{\mathrm{taper}}$.
+    Alternative to the Gaussian illumination of Hill Eq. 54 for corrugated
+    feedhorn optics.
+
+    Args:
+        r: radial coordinate.
+        R: horn radius parameter.
+        R_taper: soft cutoff radius.
+        softening: edge transition width.
+
+    Returns:
+        Beam illumination intensity.
     """
     u01 = 2.4048255577  # first zero of J0
     return j0(u01 * r / R) ** 2 * soft_edge(r, R_taper, softening)
 
 
-def beam_coherence(p, beam_func, r_min=0.0, r_max=1.0, n_pts=10000):
+def beam_coherence(
+    p: ArrayLike,
+    beam_func: Callable[[Array], Array],
+    r_min: float = 0.0,
+    r_max: float = 1.0,
+    n_pts: int = 10000,
+) -> Array:
     r"""Compute amplitude coherence $\gamma(p)$ via Hankel transform.
 
     Evaluates the normalized zeroth-order Hankel transform of the beam
@@ -104,21 +156,23 @@ def beam_coherence(p, beam_func, r_min=0.0, r_max=1.0, n_pts=10000):
     limit recovers the Bessel/jinc result of Eq. 55.
 
     Args:
-        p: detector separations in $F\lambda$ units (array)
-        beam_func: callable returning $|G(r)|^2$ given r in units of $D_\mathrm{ap}/2$
-        r_min: inner integration bound (0 for aperture, $R_\mathrm{ap}$ for stop)
-        r_max: outer integration bound
-        n_pts: number of integration points
+        p: detector separations in $F\lambda$ units (array).
+        beam_func: callable returning $|G(r)|^2$ given r in units of
+            $D_\mathrm{ap}/2$.
+        r_min: inner integration bound (0 for aperture, $R_\mathrm{ap}$ for
+            stop).
+        r_max: outer integration bound.
+        n_pts: number of integration points.
 
     Returns:
-        $\gamma(p)$ array, normalized so $\gamma(0) = 1$
+        $\gamma(p)$ array, normalized so $\gamma(0) = 1$.
     """
     p = jnp.atleast_1d(jnp.asarray(p, dtype=jnp.float64))
     r = jnp.linspace(max(r_min, 1e-10), r_max, n_pts)
     G2 = jnp.maximum(beam_func(r), 0.0)
     norm = 2 * jnp.pi * jnp.trapezoid(G2 * r, r)
 
-    def _single_p(pp):
+    def _single_p(pp: Array) -> Array:
         integrand = G2 * j0(2 * jnp.pi * pp * r) * r * 2 * jnp.pi
         return jnp.trapezoid(integrand, r) / norm
 
@@ -127,13 +181,13 @@ def beam_coherence(p, beam_func, r_min=0.0, r_max=1.0, n_pts=10000):
 
 # Preset parameters. The "bolocalc" values were fitted to reproduce
 # the aperture correlation pickle distributed with BoloCalc.
-PRESETS = {
+PRESETS: dict[str, BeamParams] = {
     "bolocalc": {
         "model": "poly_taper",
         "a1": 1.0825,
         "a2": -0.0413,
         "n": 1.300,
-        "R_zero": 0.961,  # root of (1 - a1*r - a2*r^2), beam vanishes here
+        "R_zero": 0.961,  # root of (1 - a1*r - a2*r**2), beam vanishes here
     },
     "trunc_gauss": {
         "model": "trunc_gauss",
@@ -148,7 +202,7 @@ PRESETS = {
 }
 
 
-def load_bolocalc_stop():
+def load_bolocalc_stop() -> tuple[Array, Array]:
     """Load the stored stop correlation curve.
 
     The stop correlation for the "bolocalc" preset is loaded from a stored
@@ -158,13 +212,18 @@ def load_bolocalc_stop():
     against Gaussian, Airy, sinc, polynomial, and annular beam models, as
     well as 2D FFT and Monte Carlo simulations, could not reproduce the
     sidelobe structure to better than ~2% RMS.
+
+    Returns:
+        Tuple of (pitch, correlation_values).
     """
     data_dir = Path(__file__).parent / "data"
     data = np.load(data_dir / "stop_corr.npy")  # (2, 100): [pitch, values]
     return jnp.asarray(data[0]), jnp.asarray(data[1])
 
 
-def compute_corr_curves(preset="bolocalc", p_grid=None):
+def compute_corr_curves(
+    preset: str | BeamParams = "bolocalc", p_grid: Array | None = None
+) -> tuple[Array, Array, Array]:
     r"""Compute aperture and stop coherence curves for a given preset.
 
     Returns the amplitude coherence $\gamma_\mathrm{ap}$ (Hill Eq. 53) and
@@ -174,24 +233,27 @@ def compute_corr_curves(preset="bolocalc", p_grid=None):
 
     Args:
         preset: name of a preset ("bolocalc", "trunc_gauss", "he11")
-            or a dict with beam model parameters
-        p_grid: pitch grid in $F\lambda$ units. Defaults to linspace(0, 5, 100).
+            or a dict with beam model parameters.
+        p_grid: pitch grid in $F\lambda$ units. Defaults to
+            linspace(0, 5, 100).
 
     Returns:
-        ``(p_grid, gamma_apert, gamma_stop)`` arrays
+        ``(p_grid, gamma_apert, gamma_stop)`` arrays.
     """
     if p_grid is None:
         p_grid = jnp.linspace(0, 5, 100)
 
-    params = PRESETS[preset] if isinstance(preset, str) else preset
+    params: BeamParams = PRESETS[preset] if isinstance(preset, str) else preset
 
     model = params["model"]
 
-    R_ap = params.get("R_ap", 1.0)
+    R_ap: float = params.get("R_ap", 1.0)  # type: ignore[assignment]
 
     if model == "poly_taper":
-        a1, a2, n = params["a1"], params["a2"], params["n"]
-        R_zero = params.get("R_zero", 1.0 / a1 if abs(a2) < 1e-10 else 1.0)
+        a1: float = params["a1"]  # type: ignore[assignment]
+        a2: float = params["a2"]  # type: ignore[assignment]
+        n: float = params["n"]  # type: ignore[assignment]
+        R_zero: float = params.get("R_zero", 1.0 / a1 if abs(a2) < 1e-10 else 1.0)  # type: ignore[assignment]
         beam_func = lambda r: poly_taper(r, a1, a2, n)  # noqa: E731
         gamma_apert = beam_coherence(p_grid, beam_func, r_max=R_zero)
 
@@ -206,14 +268,16 @@ def compute_corr_curves(preset="bolocalc", p_grid=None):
             gamma_stop = gamma_stop_signed**2
 
     elif model == "trunc_gauss":
-        sigma, R = params["sigma"], params["R"]
+        sigma: float = params["sigma"]  # type: ignore[assignment]
+        R: float = params["R"]  # type: ignore[assignment]
         beam_func = lambda r: trunc_gauss(r, sigma, R)  # noqa: E731
         gamma_apert = beam_coherence(p_grid, beam_func, r_max=R_ap)
         gamma_stop_signed = beam_coherence(p_grid, beam_func, r_min=R_ap, r_max=R + 0.1)
         gamma_stop = gamma_stop_signed**2
 
     elif model == "he11":
-        R, R_taper = params["R"], params["R_taper"]
+        R: float = params["R"]  # type: ignore[assignment]
+        R_taper: float = params["R_taper"]  # type: ignore[assignment]
         beam_func = lambda r: he11(r, R, R_taper)  # noqa: E731
         gamma_apert = beam_coherence(p_grid, beam_func, r_max=R_ap)
         gamma_stop_signed = beam_coherence(
