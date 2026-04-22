@@ -41,19 +41,22 @@ BeamParams = dict[str, BeamModel | float]
 
 
 def j0(x: ArrayLike) -> Array:
-    """Zeroth-order Bessel function J_0(x).
+    r"""Zeroth-order Bessel function $J_0(x)$.
 
     Args:
         x: argument (scalar or array).
 
     Returns:
-        J_0(x), with the z=0 singularity handled.
+        $J_0(x)$, with the $x=0$ singularity handled.
     """
     x = jnp.asarray(x, dtype=jnp.float64)
-    # bessel_jn returns nan at z=0; handle with jnp.where
-    safe_x = jnp.where(jnp.abs(x) < 1e-30, 1.0, x)
-    result = bessel_jn(safe_x, v=0, n_iter=50)[0]
-    return jnp.where(jnp.abs(x) < 1e-30, 1.0, result)
+    small = jnp.abs(x) < 0.01
+    safe_x = jnp.where(small, 1.0, x)
+    large_val = bessel_jn(safe_x, v=0, n_iter=50)[0]
+    # for small values, use Taylor expansion, similar to what scipy does
+    # see scipy/xsf/include/xsf/cephes/j0.h lines 169-173
+    small_val = 1.0 - x**2 / 4.0
+    return jnp.where(small, small_val, large_val)
 
 
 def soft_edge(r: ArrayLike, R: float, softening: float = 0.01) -> Array:
