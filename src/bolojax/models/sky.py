@@ -209,7 +209,9 @@ class AmAtm(AtmBackend):
         }
 
         cache = Path(cache_dir) if cache_dir else Path(path).parent / ".bolojax_cache"
-        self._cached_compute = Memory(cache, verbose=0).cache(_compute_am_grid)
+        self._cached_compute = Memory(cache, verbose=0).cache(
+            _compute_am_grid, ignore=["derived"]
+        )
         self.freq_ghz: np.ndarray | None = None
         self.tb_grid: np.ndarray | None = None
         self.tx_grid: np.ndarray | None = None
