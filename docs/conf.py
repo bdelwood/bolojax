@@ -30,6 +30,7 @@ mathjax3_config = {
     "tex": {
         "inlineMath": [["$", "$"], ["\\(", "\\)"]],
         "displayMath": [["$$", "$$"], ["\\[", "\\]"]],
+        "tags": "all",
     },
 }
 

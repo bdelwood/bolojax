@@ -96,7 +96,7 @@ class OpticalElement(BolojaxModel):
     """Model for a single optical element."""
 
     type: Literal["element"] = "element"
-    temperature: Var() = None
+    temperature: Var("K") = None
     spillover_temp: Var("K") = None
     scatter_temp: Var("K") = None
     surface_rough: Var() = None

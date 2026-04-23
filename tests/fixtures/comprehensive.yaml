@@ -6,20 +6,20 @@ sim_config:
 universe:
   dust:
     spectral_index: 1.5
-    amplitude: 0.012
-    scale_frequency: 353.0
-    scale_temperature: 19.7
+    amplitude: "0.012 MJy"
+    scale_frequency: "353 GHz"
+    scale_temperature: "19.7 K"
   synchrotron:
     spectral_index: -3.0
     amplitude: 0.0002
-    scale_frequency: 30.0
+    scale_frequency: "30 GHz"
   atmosphere: {}
 instrument:
   site: Pole
   sky_temp: null
   elevation: 60.0
   pwv: 0.6
-  obs_time: 1.0
+  obs_time: "1 yr"
   sky_fraction: 0.01
   obs_effic: 0.8
   NET: 1.0
@@ -30,74 +30,74 @@ instrument:
     revisit_rate: null
   optics_config:
     default:
-      temperature: 273.0
+      temperature: "273 K"
       absorption: 0.0
       reflection: 0.0
       scatter_frac: 0.0
       spillover: 0.0
     elements:
       - primary:
-          temperature: 250.0
+          temperature: "250 K"
           conductivity: 3.6E7
           spillover: 0.005
-          spillover_temp: 250.0
+          spillover_temp: "250 K"
           type: mirror
       - secondary:
-          temperature: 250.0
+          temperature: "250 K"
           absorption: 0.003
           type: mirror
       - forebaffle:
-          temperature: 240.0
+          temperature: "240 K"
           scatter_frac: 0.01
-          scatter_temp: 240.0
+          scatter_temp: "240 K"
       - window:
-          temperature: 280.0
+          temperature: "280 K"
           absorption: 0.005
           reflection:
             var_type: dist
             fname: Bands/Optics/Window_reflection.txt
           spillover: 0.02
-          spillover_temp: 273.0
+          spillover_temp: "273 K"
       - IRshader1:
-          temperature: 200.0
+          temperature: "200 K"
           absorption: 0.001
       - IRshader2:
-          temperature: 150.0
+          temperature: "150 K"
           absorption: 0.001
       - alumina_filter:
-          temperature: 50.0
+          temperature: "50 K"
           thickness: 0.01
           index: 3.1
           loss_tangent: 0.00026
           reflection: 0.02
           type: dielectric
       - lens1:
-          temperature: 4.0
+          temperature: "4 K"
           thickness: 0.02
           index: 3.1
           loss_tangent: 0.00026
           reflection: 0.006
           type: dielectric
       - aperture:
-          temperature: 4.0
+          temperature: "4 K"
           absorption: 0.0
           type: aperture_stop
       - lens2:
-          temperature: 2.0
+          temperature: "2 K"
           thickness: 0.025
           index: 3.1
           loss_tangent: 0.00026
           reflection: 0.006
           type: dielectric
       - lowpass:
-          temperature: 0.3
+          temperature: "300 mK"
           absorption: 0.01
           reflection: 0.05
   channel_default:
-    band_center: 95.0
+    band_center: "95 GHz"
     fractional_bandwidth: 0.25
     band_response: 1.0
-    pixel_size: 7.5
+    pixel_size: "7.5 mm"
     num_det_per_water: 120
     num_wafer_per_optics_tube: 20
     num_optics_tube: 1
@@ -106,7 +106,7 @@ instrument:
     psat: null
     psat_factor: 3.0
     carrier_index: 3
-    Tc: 0.165
+    Tc: "165 mK"
     Tc_fraction: null
     G: null
     Flink: null
@@ -121,12 +121,12 @@ instrument:
       boresite_elevation: 0
       optical_coupling: 1
       f_number: 1.6
-      bath_temperature: 0.1
+      bath_temperature: "100 mK"
     elements:
       cam_1:
         skip_optical_elements: []
         chan_config:
           elements:
             chan_1:
-              band_center: 95.0
+              band_center: "95 GHz"
               fractional_bandwidth: 0.25

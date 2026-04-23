@@ -9,6 +9,7 @@
 :caption: Guides
 
 atmosphere
+beam_correlation
 ```
 
 ```{toctree}

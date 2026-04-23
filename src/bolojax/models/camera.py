@@ -30,7 +30,7 @@ class CameraConfig(BolojaxModel):
     bath_temperature: Var("K") = 0.1
     skip_optical_elements: list = Field(default_factory=list)
     chan_config: dict | None = None
-    beam_model: str = "bolocalc"
+    beam_model: str | dict = "bolocalc"
 
     # Channels built from chan_config during construction
     channels: dict[str, ChannelConfig] = Field(default_factory=dict)

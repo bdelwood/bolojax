@@ -184,9 +184,9 @@ class AmAtm(AtmBackend):
             DerivedParam(
                 "pwv_scale",
                 "pwv",
-                lambda p: max(p["pwv"] / profile_pwv_mm, 1e-6)
-                if p["pwv"] > 0
-                else 1e-6,
+                lambda p: (
+                    max(p["pwv"] / profile_pwv_mm, 1e-6) if p["pwv"] > 0 else 1e-6
+                ),
                 0.1,
             ),
         ]
