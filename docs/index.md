@@ -6,6 +6,13 @@
 
 ```{toctree}
 :hidden:
+:caption: Guides
+
+atmosphere
+```
+
+```{toctree}
+:hidden:
 :caption: API Reference
 
 autoapi/index
