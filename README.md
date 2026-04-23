@@ -52,13 +52,13 @@ calculation JIT-compiled and fully differentiable.
 ## Installation
 
 ```bash
-uv pip install "git+https://github.com/bdelwood/bolojax.git"
+uv pip install bolojax
 ```
 
 For GPU support:
 
 ```bash
-uv pip install "bolojax[gpu] @ git+https://github.com/bdelwood/bolojax.git"
+uv pip install 'bolojax[gpu]'
 ```
 
 ## Architecture
@@ -90,8 +90,11 @@ zodiax pytree that you compute with, differentiate through, and modify with
 import bolojax
 
 config = bolojax.ExperimentConfig.from_yaml("config/example.yaml")
-config.run()
-config.instrument.print_summary()
+experiment = config.setup()
+
+# Compute and export
+ds = experiment.to_dataset()
+ds.to_netcdf("results.nc")
 ```
 
 Or from the command line:
@@ -133,27 +136,28 @@ g = grad_net(experiment)
 ### Optical element types
 
 Each element in the optical chain has a `type` field and computes its own
-emissivity and transmission from physical properties:
+emissivity and transmission from physical properties. Quantities can include
+units.:
 
 ```yaml
 elements:
   - forebaffle:
-      temperature: 240.0
+      temperature: "240 K"
       scatter_frac: 0.013
   - window:
       type: dielectric
-      temperature: 260.0
-      thickness: 0.025
+      temperature: "260 K"
+      thickness: "0.025 m"
       index: 1.5246
       loss_tangent: 1.38e-4
       reflection: 0.01
   - primary:
       type: mirror
-      temperature: 273.0
+      temperature: "273 K"
       conductivity: 3.6e7
   - aperture:
       type: aperture_stop
-      temperature: 5.5
+      temperature: "5.5 K"
       spillover: 0.15
 ```
 
