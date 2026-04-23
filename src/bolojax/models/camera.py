@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 class CameraConfig(BolojaxModel):
     """Camera model."""
 
-    boresite_elevation: Var() = 0.0
-    pixel_elevation: Var() = None
+    boresite_elevation: Var("deg") = 0.0
+    pixel_elevation: Var("deg") = None
     optical_coupling: Var() = 1.0
     f_number: Var() = 2.5
     bath_temperature: Var("K") = 0.1

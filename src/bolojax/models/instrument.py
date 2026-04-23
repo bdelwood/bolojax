@@ -25,8 +25,8 @@ class InstrumentConfig(BolojaxModel):
 
     custom_atm_file: str | None = None
 
-    elevation: Var() = None
-    pwv: Var() = None
+    elevation: Var("deg") = None
+    pwv: Var("mm") = None
     obs_effic: Var() = None
 
     readout: Readout

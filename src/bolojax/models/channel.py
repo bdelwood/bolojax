@@ -42,7 +42,7 @@ class ChannelConfig(BolojaxModel):  # pylint: disable=too-many-instance-attribut
     num_wafer_per_optics_tube: int = 1
     num_optics_tube: int = 3
 
-    psat: Var() = None
+    psat: Var("pW") = None
     psat_factor: Var() = 3.0
 
     read_frac: Var() = 0.1
@@ -51,7 +51,7 @@ class ChannelConfig(BolojaxModel):  # pylint: disable=too-many-instance-attribut
     Flink: Var() = None
     Yield: Var() = None
     response_factor: Var() = None
-    nyquist_inductance: Var() = None
+    nyquist_inductance: Var("nH") = None
 
     @property
     def noise_calc(self) -> Noise | None:

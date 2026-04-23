@@ -99,7 +99,7 @@ class OpticalElement(BolojaxModel):
     temperature: Var("K") = None
     spillover_temp: Var("K") = None
     scatter_temp: Var("K") = None
-    surface_rough: Var() = None
+    surface_rough: Var("m") = None
 
     absorption: Var() = None
     reflection: Var() = None
@@ -164,7 +164,7 @@ class Mirror(OpticalElement):
     """OpticalElement sub-class for mirrors."""
 
     type: Literal["mirror"] = "mirror"
-    conductivity: Var() = None
+    conductivity: Var("S/m") = None
 
     def calc_abso(
         self, channel: ChannelConfig, freqs: np.ndarray, nsample: int
@@ -178,7 +178,7 @@ class Dielectric(OpticalElement):
     """OpticalElement sub-class for dielectrics."""
 
     type: Literal["dielectric"] = "dielectric"
-    thickness: Var() = None
+    thickness: Var("m") = None
     index: Var() = None
     loss_tangent: Var() = None
 

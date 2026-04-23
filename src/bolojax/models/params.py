@@ -207,6 +207,12 @@ def Var(unit: str | None = None) -> type[VariableHolder]:
             kw = dict(v)
         elif is_none(v):
             kw = {"value": np.nan}
+        elif isinstance(v, str):
+            # Try bare numeric string first (YAML parses "3.6E7" as str)
+            try:
+                kw = {"value": float(v)}
+            except ValueError:
+                kw = {"value": v}
         else:
             kw = {"value": v}
         if pint_unit is not None:
