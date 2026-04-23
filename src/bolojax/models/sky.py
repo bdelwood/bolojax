@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from collections.abc import Callable
+from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -37,36 +39,45 @@ class AtmBackend(ABC):
     """Atmosphere model base class.
 
     Subclasses implement :meth:`raw_spectra` to return raw
-    ``(freq_ghz, temp, trans)`` arrays for a single condition.
-    The base class handles interpolation and batching.
+    ``(freq_ghz, temp, trans)`` arrays for a single set of atmospheric
+    parameters.  The base class handles interpolation and batching.
+
+    Parameters are passed as keyword arguments (e.g. ``pwv=0.6,
+    elevation=60``).  The set of parameter names depends on the
+    backend and the ``.amc`` configuration file.
     """
 
     @abstractmethod
     def raw_spectra(
-        self, freqs: np.ndarray, pwv: float, elevation: float
+        self, freqs: np.ndarray, **params: float
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (freq_ghz, brightness_temp_K, transmission) arrays."""
 
-    def temp(self, freqs: np.ndarray, pwv: float, elevation: float) -> np.ndarray:
-        """Brightness temperature [K] at given freqs [Hz], pwv [m], elevation [deg]."""
-        freq_ghz, temp, _ = self.raw_spectra(freqs, pwv, elevation)
+    def temp(self, freqs: np.ndarray, **params: float) -> np.ndarray:
+        """Brightness temperature [K] at given freqs [Hz]."""
+        freq_ghz, temp, _ = self.raw_spectra(freqs, **params)
         return _interp_to_hz(freqs, freq_ghz, temp)
 
-    def trans(self, freqs: np.ndarray, pwv: float, elevation: float) -> np.ndarray:
-        """Transmission [0-1] at given freqs [Hz], pwv [m], elevation [deg]."""
-        freq_ghz, _, trans = self.raw_spectra(freqs, pwv, elevation)
+    def trans(self, freqs: np.ndarray, **params: float) -> np.ndarray:
+        """Transmission [0-1] at given freqs [Hz]."""
+        freq_ghz, _, trans = self.raw_spectra(freqs, **params)
         return _interp_to_hz(freqs, freq_ghz, trans)
 
     def batch(
-        self, freqs: np.ndarray, pwv: np.ndarray, elevation: np.ndarray
+        self, freqs: np.ndarray, **param_arrays: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Evaluate temp and trans for arrays of (pwv, elevation).
+        """Evaluate temp and trans for arrays of parameters.
 
+        Each kwarg is an array of sampled values for that parameter.
+        All arrays must broadcast to the same shape.
         Returns (temp, trans) each of shape (n_samples, n_freq).
         """
+        names = list(param_arrays.keys())
+        arrays = list(param_arrays.values())
         temps, transs = [], []
-        for p, e in np.broadcast(pwv, elevation):
-            fg, t, x = self.raw_spectra(freqs, float(p), float(e))
+        for vals in np.broadcast(*arrays):
+            point = dict(zip(names, (float(v) for v in vals), strict=True))
+            fg, t, x = self.raw_spectra(freqs, **point)
             temps.append(_interp_to_hz(freqs, fg, t))
             transs.append(_interp_to_hz(freqs, fg, x))
         return np.array(temps), np.array(transs)
@@ -81,41 +92,9 @@ class AtmProfile(AtmBackend):
         )
 
     def raw_spectra(
-        self, freqs: np.ndarray, pwv: float, elevation: float
+        self, freqs: np.ndarray, **params: float
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.freq_ghz, self.temps, self.transmission
-
-
-def _compute_am_grid(
-    path: str,
-    amc_args: list[str | float],
-    profile_pwv_mm: float,
-    pwv_mm: list[float],
-    elevation: list[float],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute a (PWV, elevation) atmosphere grid via am.ModelGrid.
-
-    Module-level function for ``joblib.Memory`` caching.
-    Returns ``(freq_ghz, tb, tx)`` with shapes ``(n_pwv, n_elev, n_freq)``.
-    """
-    params = xr.Dataset(
-        coords={
-            "pwv_mm": np.array(pwv_mm, dtype=float),
-            "elevation": np.array(elevation, dtype=float),
-        }
-    )
-
-    def args_fn(pwv_mm: float, elevation: float) -> list[str | float]:
-        subs = {
-            "zenith": 90.0 - elevation,
-            "pwv_scale": max(pwv_mm / profile_pwv_mm, 1e-6) if pwv_mm > 0 else 1e-6,
-        }
-        return [subs.get(t, t) for t in amc_args]
-
-    result = am.ModelGrid(path, params, args_fn).compute()
-    freq_ghz = result.coords["frequency"].values
-    tb = result["tb_planck"].values if "tb_planck" in result else result["tb_rj"].values
-    return freq_ghz, tb, result["transmittance"].values
 
 
 def _make_grid(values: np.ndarray, step: float) -> list[float]:
@@ -125,17 +104,66 @@ def _make_grid(values: np.ndarray, step: float) -> list[float]:
     return list(np.arange(lo, hi + step / 2, step).round(6))
 
 
+@dataclass
+class DerivedParam:
+    """A derived am argument computed from a grid coordinate.
+
+    For example, ``zenith`` is derived from ``elevation`` via
+    ``90 - elevation``.  The grid is built over ``source`` values;
+    the ``transform`` converts to the am argument at evaluation time.
+    """
+
+    keyword: str
+    source: str
+    transform: Callable
+    grid_step: float = 1.0
+
+    def resolve(self, point: dict[str, float]) -> float:
+        """Evaluate the transform for a given grid point."""
+        return self.transform(point)
+
+
+def _compute_am_grid(
+    path: str,
+    amc_args: list[str | float],
+    derived: dict[str, DerivedParam],
+    grid_coords: dict[str, list[float]],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute an N-dimensional atmosphere grid via am.ModelGrid.
+
+    Module-level function for ``joblib.Memory`` caching.
+    """
+    params = xr.Dataset(
+        coords={k: np.array(v, dtype=float) for k, v in grid_coords.items()}
+    )
+
+    def args_fn(**point: float) -> list[str | float]:
+        return [
+            derived[t].resolve(point)
+            if t in derived
+            else point.get(t, t)
+            if isinstance(t, str)
+            else t
+            for t in amc_args
+        ]
+
+    result = am.ModelGrid(path, params, args_fn).compute()
+    freq_ghz = result.coords["frequency"].values
+    tb = result["tb_planck"].values if "tb_planck" in result else result["tb_rj"].values
+    return freq_ghz, tb, result["transmittance"].values
+
+
 class AmAtm(AtmBackend):
     """Atmosphere via am-python with automatic disk caching.
 
-    On first use, computes a grid of atmosphere profiles over
-    (PWV, elevation) using ``am.ModelGrid`` in parallel and caches
+    On first use, computes a grid of atmosphere profiles over the
+    dynamic parameters using ``am.ModelGrid`` in parallel and caches
     the result to disk via ``joblib``.  Subsequent calls load from
     cache instantly.
 
-    The grid extent is either set explicitly (``pwv_mm``, ``elevation``)
-    or inferred lazily from the sampled conditions via
-    :meth:`ensure_grid`.
+    Dynamic parameters are string entries in ``amc_args`` that match
+    either a derived parameter name or a direct grid coordinate name.
+    Numeric entries are static.
     """
 
     def __init__(
@@ -143,70 +171,86 @@ class AmAtm(AtmBackend):
         path: str,
         amc_args: list[str | float],
         profile_pwv_mm: float = 0.425,
-        pwv_mm: list[float] | None = None,
-        elevation: list[float] | None = None,
         cache_dir: str | None = None,
+        **grid_overrides: list[float],
     ) -> None:
         self.path = path
         self.amc_args = amc_args
         self.profile_pwv_mm = profile_pwv_mm
-        self.pwv_mm = pwv_mm
-        self.elevation = elevation
+
+        # Built-in derived parameters
+        derived_list = [
+            DerivedParam("zenith", "elevation", lambda p: 90.0 - p["elevation"], 1.0),
+            DerivedParam(
+                "pwv_scale",
+                "pwv",
+                lambda p: max(p["pwv"] / profile_pwv_mm, 1e-6)
+                if p["pwv"] > 0
+                else 1e-6,
+                0.1,
+            ),
+        ]
+        self.by_keyword: dict[str, DerivedParam] = {d.keyword: d for d in derived_list}
+        self.by_source: dict[str, DerivedParam] = {d.source: d for d in derived_list}
+
+        # Discover dynamic grid coordinates from amc_args string entries
+        self.dynamic_params: list[str] = []
+        for token in amc_args:
+            if not isinstance(token, str):
+                continue
+            source = (
+                self.by_keyword[token].source if token in self.by_keyword else token
+            )
+            if source not in self.dynamic_params:
+                self.dynamic_params.append(source)
+
+        self.grid_coords: dict[str, list[float] | None] = {
+            p: grid_overrides.get(p) for p in self.dynamic_params
+        }
 
         cache = Path(cache_dir) if cache_dir else Path(path).parent / ".bolojax_cache"
-        self._compute = Memory(cache, verbose=0).cache(_compute_am_grid)
-        self._freq_ghz: np.ndarray | None = None
-        self._tb_grid: np.ndarray | None = None
-        self._tx_grid: np.ndarray | None = None
+        self._cached_compute = Memory(cache, verbose=0).cache(_compute_am_grid)
+        self.freq_ghz: np.ndarray | None = None
+        self.tb_grid: np.ndarray | None = None
+        self.tx_grid: np.ndarray | None = None
 
-    def ensure_grid(
-        self,
-        pwv_m: np.ndarray | None = None,
-        elevation: np.ndarray | None = None,
-        pwv_step_mm: float = 0.1,
-        elev_step: float = 1.0,
-    ) -> None:
-        """Ensure the grid is computed, inferring extent from sampled values if needed."""
-        if self._freq_ghz is not None:
+    def ensure_grid(self, **sampled_values: np.ndarray) -> None:
+        """Ensure the grid is computed, inferring extent from sampled values."""
+        if self.freq_ghz is not None:
             return
-        if self.pwv_mm is None:
-            if pwv_m is None:
-                msg = "pwv_mm grid not configured and no sampled values to infer from"
-                raise ValueError(msg)
-            self.pwv_mm = _make_grid(np.atleast_1d(pwv_m) * 1e3, pwv_step_mm)
-        if self.elevation is None:
-            if elevation is None:
-                msg = (
-                    "elevation grid not configured and no sampled values to infer from"
+        for param in self.dynamic_params:
+            if self.grid_coords[param] is None:
+                if param not in sampled_values:
+                    msg = f"Grid for '{param}' not configured and no sampled values provided"
+                    raise ValueError(msg)
+                d = self.by_source.get(param)
+                step = d.grid_step if d else 1.0
+                self.grid_coords[param] = _make_grid(
+                    np.atleast_1d(sampled_values[param]), step
                 )
-                raise ValueError(msg)
-            self.elevation = _make_grid(np.atleast_1d(elevation), elev_step)
-        self._freq_ghz, self._tb_grid, self._tx_grid = self._compute(
+        self.freq_ghz, self.tb_grid, self.tx_grid = self._cached_compute(
             self.path,
             self.amc_args,
-            self.profile_pwv_mm,
-            self.pwv_mm,
-            self.elevation,
+            self.by_keyword,
+            {k: v for k, v in self.grid_coords.items() if v is not None},
         )
 
     def raw_spectra(
-        self, freqs: np.ndarray, pwv: float, elevation: float
+        self, freqs: np.ndarray, **params: float
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Look up nearest grid point. *pwv* is in meters (SI)."""
-        i_pwv = np.argmin(np.abs(np.array(self.pwv_mm) - pwv * 1e3))
-        i_elev = np.argmin(np.abs(np.array(self.elevation) - elevation))
-        return (
-            self._freq_ghz,
-            self._tb_grid[i_pwv, i_elev],
-            self._tx_grid[i_pwv, i_elev],
+        """Look up nearest grid point in N dimensions."""
+        idx = tuple(
+            np.argmin(np.abs(np.array(self.grid_coords[p]) - params[p]))
+            for p in self.dynamic_params
         )
+        return self.freq_ghz, self.tb_grid[idx], self.tx_grid[idx]
 
     def batch(
-        self, freqs: np.ndarray, pwv: np.ndarray, elevation: np.ndarray
+        self, freqs: np.ndarray, **param_arrays: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         """Ensure grid covers all queried points, then delegate to base."""
-        self.ensure_grid(pwv_m=pwv, elevation=elevation)
-        return super().batch(freqs, pwv, elevation)
+        self.ensure_grid(**param_arrays)
+        return super().batch(freqs, **param_arrays)
 
 
 class Atmosphere(BolojaxModel):
@@ -223,12 +267,11 @@ class Atmosphere(BolojaxModel):
     profile_pwv_mm: float = 0.425
 
     _telescope: InstrumentConfig | None = PrivateAttr(default=None)
-    _sampled_pwv: np.ndarray | None = PrivateAttr(default=None)
-    _sampled_elev: np.ndarray | None = PrivateAttr(default=None)
+    _sampled_params: dict[str, np.ndarray] = PrivateAttr(default_factory=dict)
     _nsamples: int = PrivateAttr(default=1)
 
     def set_telescope(self, value: InstrumentConfig) -> None:
-        """Set the telescope (needed to sample elevation and PWV values)."""
+        """Set the telescope (needed to sample parameter values)."""
         self._telescope = value
 
     @cached_property
@@ -248,11 +291,22 @@ class Atmosphere(BolojaxModel):
         return None
 
     def sample(self, nsamples: int) -> None:
-        """Sample PWV and elevation for atmosphere evaluation."""
-        self._telescope.pwv.sample(nsamples)
-        self._telescope.elevation.sample(nsamples)
-        self._sampled_pwv = 1e-3 * np.atleast_1d(self._telescope.pwv())  # mm → m
-        self._sampled_elev = np.atleast_1d(self._telescope.elevation())
+        """Sample atmosphere parameters from instrument fields.
+
+        Discovers which parameters to sample from the backend model's
+        ``dynamic_params`` list, then looks up each on the instrument
+        by name.
+        """
+        self._sampled_params = {}
+        model = self.cached_model
+        if model is None or not hasattr(model, "dynamic_params"):
+            self._nsamples = max(nsamples, 1)
+            return
+        for param in model.dynamic_params:
+            var = getattr(self._telescope, param, None)
+            if var is not None and is_not_none(var):
+                var.sample(nsamples)
+                self._sampled_params[param] = np.atleast_1d(var())
         self._nsamples = max(nsamples, 1)
 
     def temp(
@@ -260,18 +314,26 @@ class Atmosphere(BolojaxModel):
     ) -> np.ndarray:
         """Brightness temperature [K] for sampled conditions."""
         nsamp = max(self._nsamples, 1)
-        elev = elevation if elevation is not None else self._sampled_elev
-        temps, _ = self.cached_model.batch(freqs, self._sampled_pwv, elev)
-        return temps.reshape((nsamp, 1, len(freqs)))
+        params = dict(self._sampled_params)
+        if elevation is not None:
+            params["elevation"] = elevation
+        temps, _ = self.cached_model.batch(freqs, **params)
+        return np.broadcast_to(temps, (nsamp, len(freqs))).reshape(
+            (nsamp, 1, len(freqs))
+        )
 
     def trans(
         self, freqs: np.ndarray, elevation: np.ndarray | None = None
     ) -> np.ndarray:
         """Transmission [0-1] for sampled conditions."""
         nsamp = max(self._nsamples, 1)
-        elev = elevation if elevation is not None else self._sampled_elev
-        _, transs = self.cached_model.batch(freqs, self._sampled_pwv, elev)
-        return transs.reshape((nsamp, 1, len(freqs)))
+        params = dict(self._sampled_params)
+        if elevation is not None:
+            params["elevation"] = elevation
+        _, transs = self.cached_model.batch(freqs, **params)
+        return np.broadcast_to(transs, (nsamp, len(freqs))).reshape(
+            (nsamp, 1, len(freqs))
+        )
 
 
 class Foreground(BolojaxModel):
