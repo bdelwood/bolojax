@@ -1,0 +1,132 @@
+sim_config:
+  nsky_sim: 0
+  ndet_sim: 0
+  config_dir: config
+  freq_resol: 1
+universe:
+  dust:
+    spectral_index: 1.5
+    amplitude: 0.012
+    scale_frequency: 353.0
+    scale_temperature: 19.7
+  synchrotron:
+    spectral_index: -3.0
+    amplitude: 0.0002
+    scale_frequency: 30.0
+  atmosphere: {}
+instrument:
+  site: Pole
+  sky_temp: null
+  elevation: 60.0
+  pwv: 0.6
+  obs_time: 1.0
+  sky_fraction: 0.01
+  obs_effic: 0.8
+  NET: 1.0
+  custom_atm_file: Bands/atacama_atm.txt
+  readout:
+    read_noise_frac: 0.1
+    dwell_time: null
+    revisit_rate: null
+  optics_config:
+    default:
+      temperature: 273.0
+      absorption: 0.0
+      reflection: 0.0
+      scatter_frac: 0.0
+      spillover: 0.0
+    elements:
+      - primary:
+          temperature: 250.0
+          conductivity: 3.6E7
+          spillover: 0.005
+          spillover_temp: 250.0
+          type: mirror
+      - secondary:
+          temperature: 250.0
+          absorption: 0.003
+          type: mirror
+      - forebaffle:
+          temperature: 240.0
+          scatter_frac: 0.01
+          scatter_temp: 240.0
+      - window:
+          temperature: 280.0
+          absorption: 0.005
+          reflection:
+            var_type: dist
+            fname: Bands/Optics/Window_reflection.txt
+          spillover: 0.02
+          spillover_temp: 273.0
+      - IRshader1:
+          temperature: 200.0
+          absorption: 0.001
+      - IRshader2:
+          temperature: 150.0
+          absorption: 0.001
+      - alumina_filter:
+          temperature: 50.0
+          thickness: 0.01
+          index: 3.1
+          loss_tangent: 0.00026
+          reflection: 0.02
+          type: dielectric
+      - lens1:
+          temperature: 4.0
+          thickness: 0.02
+          index: 3.1
+          loss_tangent: 0.00026
+          reflection: 0.006
+          type: dielectric
+      - aperture:
+          temperature: 4.0
+          absorption: 0.0
+          type: aperture_stop
+      - lens2:
+          temperature: 2.0
+          thickness: 0.025
+          index: 3.1
+          loss_tangent: 0.00026
+          reflection: 0.006
+          type: dielectric
+      - lowpass:
+          temperature: 0.3
+          absorption: 0.01
+          reflection: 0.05
+  channel_default:
+    band_center: 95.0
+    fractional_bandwidth: 0.25
+    band_response: 1.0
+    pixel_size: 7.5
+    num_det_per_water: 120
+    num_wafer_per_optics_tube: 20
+    num_optics_tube: 1
+    waist_factor: 1.19
+    det_eff: 1.0
+    psat: null
+    psat_factor: 3.0
+    carrier_index: 3
+    Tc: 0.165
+    Tc_fraction: null
+    G: null
+    Flink: null
+    Yield: 0.8
+    response_factor: 1.0
+    bolo_resistance: null
+    squid_nei: null
+    read_frac: 0.1
+    nyquist_inductance: null
+  camera_config:
+    default:
+      boresite_elevation: 0
+      optical_coupling: 1
+      f_number: 1.6
+      bath_temperature: 0.1
+    elements:
+      cam_1:
+        skip_optical_elements: []
+        chan_config:
+          elements:
+            chan_1:
+              band_center: 95.0
+              fractional_bandwidth: 0.25
