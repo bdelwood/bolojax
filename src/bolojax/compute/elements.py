@@ -25,15 +25,15 @@ class Element(zdx.Base):
     """
 
     temperature: float | Array = 0.0
-    absorption: float = 0.0
-    reflection: float = 0.0
-    scatter_frac: float = 0.0
-    scatter_temp: float | None = None
-    spillover: float = 0.0
-    spillover_temp: float | None = None
+    absorption: float | Array = 0.0
+    reflection: float | Array = 0.0
+    scatter_frac: float | Array = 0.0
+    scatter_temp: float | Array | None = None
+    spillover: float | Array = 0.0
+    spillover_temp: float | Array | None = None
 
-    def _calc_absorption(self, freqs: Array) -> Array:
-        return jnp.broadcast_to(self.absorption, freqs.shape)
+    def _calc_absorption(self, freqs: Array) -> Array:  # noqa: ARG002
+        return jnp.atleast_1d(jnp.asarray(self.absorption, dtype=jnp.float64))
 
     def emiss_trans(self, freqs: Array) -> tuple[Array, Array]:
         """Compute emissivity and transmission arrays.
@@ -62,15 +62,15 @@ class Element(zdx.Base):
 
         emiss = abso + scat_weight + spil_weight
         trans = (1 - self.reflection) * (1 - abso) * (1 - scat) * (1 - spil)
-        return emiss, jnp.broadcast_to(trans, freqs.shape)
+        return jnp.atleast_1d(emiss), jnp.atleast_1d(trans)
 
 
 class Dielectric(Element):
     """Transmissive element: absorption from dielectric loss tangent."""
 
-    thickness: float = 0.0
-    index: float = 1.0
-    loss_tangent: float = 0.0
+    thickness: float | Array = 0.0
+    index: float | Array = 1.0
+    loss_tangent: float | Array = 0.0
 
     def _calc_absorption(self, freqs: Array) -> Array:
         return physics.dielectric_loss(
@@ -81,8 +81,8 @@ class Dielectric(Element):
 class Mirror(Element):
     """Reflective element: absorption from ohmic and Ruze losses."""
 
-    conductivity: float = 0.0
-    surface_rough: float = 0.0
+    conductivity: float | Array = 0.0
+    surface_rough: float | Array = 0.0
 
     def _calc_absorption(self, freqs: Array) -> Array:
         safe_cond = jnp.where(self.conductivity > 0, self.conductivity, 1.0)

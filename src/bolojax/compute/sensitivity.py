@@ -1,8 +1,6 @@
 """Pure, jax-traceable sensitivity computation.
 
-Core math for bolometer sensitivity calculations, expressed entirely in
-jax.numpy operations. All functions are differentiable via
-jax.grad / eqx.filter_grad.
+Core math for bolometer sensitivity calculations.
 
 :func:`compute_sensitivity` takes an :class:`~bolojax.compute.experiment.Experiment`
 and returns a :class:`SensitivityResult`.
