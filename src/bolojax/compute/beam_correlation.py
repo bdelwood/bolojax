@@ -256,7 +256,7 @@ def compute_corr_curves(
         a2: float = params["a2"]  # type: ignore[assignment]
         n: float = params["n"]  # type: ignore[assignment]
         R_zero: float = params.get("R_zero", 1.0 / a1 if abs(a2) < 1e-10 else 1.0)  # type: ignore[assignment]
-        beam_func = lambda r: poly_taper(r, a1, a2, n)  # noqa: E731
+        beam_func = lambda r: poly_taper(r, a1, a2, n)
         gamma_apert = beam_coherence(p_grid, beam_func, r_max=R_zero)
 
         if preset == "bolocalc":
@@ -272,7 +272,7 @@ def compute_corr_curves(
     elif model == "trunc_gauss":
         sigma: float = params["sigma"]  # type: ignore[assignment]
         R: float = params["R"]  # type: ignore[assignment]
-        beam_func = lambda r: trunc_gauss(r, sigma, R)  # noqa: E731
+        beam_func = lambda r: trunc_gauss(r, sigma, R)
         gamma_apert = beam_coherence(p_grid, beam_func, r_max=R_ap)
         gamma_stop_signed = beam_coherence(p_grid, beam_func, r_min=R_ap, r_max=R + 0.1)
         gamma_stop = gamma_stop_signed**2
@@ -280,7 +280,7 @@ def compute_corr_curves(
     elif model == "he11":
         R: float = params["R"]  # type: ignore[assignment]
         R_taper: float = params["R_taper"]  # type: ignore[assignment]
-        beam_func = lambda r: he11(r, R, R_taper)  # noqa: E731
+        beam_func = lambda r: he11(r, R, R_taper)
         gamma_apert = beam_coherence(p_grid, beam_func, r_max=R_ap)
         gamma_stop_signed = beam_coherence(
             p_grid, beam_func, r_min=R_ap, r_max=R_taper + 0.1

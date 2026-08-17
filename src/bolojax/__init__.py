@@ -1,4 +1,3 @@
-# ruff: noqa: E402
 # E402 disabled: jax.config.update must run before any JAX imports.
 """Bolometric sensitivity calculator for CMB instruments."""
 
