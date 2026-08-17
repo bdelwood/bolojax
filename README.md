@@ -125,10 +125,12 @@ ds.to_netcdf("results.nc")
 exp2 = experiment.set("instrument.elements.window.loss_tangent", 2.5e-4)
 result2 = exp2.compute()
 
+
 # 5. Differentiate (filter_grad skips non-float leaves like ndet)
 @eqx.filter_grad
 def grad_net(exp):
     return exp.compute().NET.squeeze()
+
 
 g = grad_net(experiment)
 ```
