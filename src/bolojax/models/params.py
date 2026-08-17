@@ -68,6 +68,13 @@ class ParamHolder(BaseModel):
         q = ureg.Quantity(base_val, self.unit)
         return np.asarray(q.to_base_units().magnitude, dtype=float)
 
+    def to(self, unit: str | pint.Unit) -> np.ndarray:
+        """Return the value converted to *unit* (raw scaled value if unitless)."""
+        if self.unit is None:
+            return self.scaled
+        q = ureg.Quantity(self.scaled, self.unit)
+        return np.asarray(q.to(unit).magnitude, dtype=float)
+
     def set_from_SI(self, val: np.ndarray) -> None:
         """Set the value from an SI-unit quantity."""
         if self.unit is None:

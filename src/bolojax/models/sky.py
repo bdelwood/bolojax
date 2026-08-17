@@ -111,12 +111,16 @@ class DerivedParam:
     For example, ``zenith`` is derived from ``elevation`` via
     ``90 - elevation``.  The grid is built over ``source`` values;
     the ``transform`` converts to the am argument at evaluation time.
+    ``source_unit`` is the unit the transform expects the source
+    values in (pint base units convert angles to radians, so the
+    consumer must request the contract unit explicitly).
     """
 
     keyword: str
     source: str
     transform: Callable
     grid_step: float = 1.0
+    source_unit: str | None = None
 
     def resolve(self, point: dict[str, float]) -> float:
         """Evaluate the transform for a given grid point."""
@@ -180,7 +184,9 @@ class AmAtm(AtmBackend):
 
         # Built-in derived parameters
         derived_list = [
-            DerivedParam("zenith", "elevation", lambda p: 90.0 - p["elevation"], 1.0),
+            DerivedParam(
+                "zenith", "elevation", lambda p: 90.0 - p["elevation"], 1.0, "deg"
+            ),
             DerivedParam(
                 "pwv_scale",
                 "pwv",
@@ -188,6 +194,7 @@ class AmAtm(AtmBackend):
                     max(p["pwv"] / profile_pwv_mm, 1e-6) if p["pwv"] > 0 else 1e-6
                 ),
                 0.1,
+                "mm",
             ),
         ]
         self.by_keyword: dict[str, DerivedParam] = {d.keyword: d for d in derived_list}
@@ -308,7 +315,12 @@ class Atmosphere(BolojaxModel):
             var = getattr(self._telescope, param, None)
             if var is not None and is_not_none(var):
                 var.sample(nsamples)
-                self._sampled_params[param] = np.atleast_1d(var())
+                derived = model.by_source.get(param)
+                if derived is not None and derived.source_unit is not None:
+                    values = var.to(derived.source_unit)
+                else:
+                    values = var()
+                self._sampled_params[param] = np.atleast_1d(values)
         self._nsamples = max(nsamples, 1)
 
     def temp(

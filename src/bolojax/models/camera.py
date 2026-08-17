@@ -111,7 +111,7 @@ class CameraConfig(BolojaxModel):
             and np.isfinite(self.pixel_elevation.SI).all()
         ):
             self.pixel_elevation.sample(nsamples)
-            elevation = self.pixel_elevation()
+            elevation = self.pixel_elevation.to("deg")
         for chan in self.channels.values():
             chan.eval_sky(universe, freq_resol, elevation=elevation)
 
